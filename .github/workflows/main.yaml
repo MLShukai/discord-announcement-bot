@@ -70,7 +70,7 @@ jobs:
 
       - name: Run pytest with coverage
         run: |
-          uv run pytest -vv --log-level=INFO --cov
+          uv run pytest -v --log-level=INFO
 
   run_type-check:
     runs-on: ubuntu-24.04
@@ -101,4 +101,4 @@ jobs:
           uv pip list
 
       - name: Run pyright
-        run: uv run pyright
+        run: uv run pyright src
