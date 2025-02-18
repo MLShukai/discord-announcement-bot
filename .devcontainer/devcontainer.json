@@ -1,0 +1,29 @@
+{
+  "name": "discord-announcement-bot",
+  "build": {
+    "context": "../",
+    "dockerfile": "./Dockerfile"
+  },
+  "workspaceMount": "source=discord-announcement-bot,target=/workspace,type=volume",
+  "workspaceFolder": "/workspace",
+  "mounts": [
+    "source=uv-cache,target=/root/.cache/uv,type=volume",
+    "source=pip-cache,target=/root/.cache/pip,type=volume",
+    "source=pre-commit-cache,target=/root/.cache/pre-commit,type=volume"
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-azuretools.vscode-docker",
+        "kevinrose.vsc-python-indent",
+        "tamasfe.even-better-toml",
+        "ms-vscode.makefile-tools"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/workspace/.venv/bin/python"
+      }
+    }
+  },
+  "shutdownAction": "stopContainer"
+}
