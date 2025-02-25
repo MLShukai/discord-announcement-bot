@@ -82,7 +82,6 @@ async def main() -> None:
         logger.error("Invalid Discord token")
     except Exception as e:
         logger.error(f"Error starting bot: {e}")
-        raise
     finally:
         if not bot.is_closed():
             await bot.close()
@@ -91,4 +90,11 @@ async def main() -> None:
 if __name__ == "__main__":
     dotenv.load_dotenv()
     # Set up asyncio event loop
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        print("Bot stopped by user")
+    finally:
+        loop.close()
