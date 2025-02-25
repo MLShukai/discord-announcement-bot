@@ -1,121 +1,97 @@
 """Command handlers for Lightning Talk configuration.
 
-This module implements slash commands for setting and getting Lightning
-Talk information.
+This module implements the command handlers for setting and getting
+Lightning Talk information.
 """
 
 import logging
 import re
 
 import discord
-from discord import app_commands
-from discord.ext import commands
 
 from bot.config.settings import BotSettings, SettingsManager
 
 logger = logging.getLogger(__name__)
 
 
-class LightningTalkCommands(commands.Cog):
-    """Lightning Talk related commands.
+class LightningTalkCommands:
+    """Command handlers for Lightning Talk configuration.
 
-    Provides commands for managing Lightning Talk information such as
-    speaker, title, and URL.
+    Provides methods for handling commands related to Lightning Talk
+    settings.
     """
 
-    lt_group = app_commands.Group(
-        name="lt", description="Lightning Talk related commands"
-    )
-
-    def __init__(
-        self,
-        bot: commands.Bot,
-        settings: BotSettings,
-        settings_manager: SettingsManager,
-    ):
+    def __init__(self, settings: BotSettings, settings_manager: SettingsManager):
         """Initialize the Lightning Talk command handlers.
 
         Args:
-            bot: The Discord bot instance.
             settings: The bot settings to update.
             settings_manager: The settings manager for saving settings.
         """
-        self.bot = bot
         self.settings = settings
         self.settings_manager = settings_manager
 
-    @lt_group.command(
-        name="speaker", description="Set or get the Lightning Talk speaker"
-    )
-    @app_commands.describe(name="The name of the speaker")
-    async def lt_speaker(
-        self, interaction: discord.Interaction, name: str | None = None
-    ) -> None:
-        """Set or get the Lightning Talk speaker name.
+    async def handle_lt_speaker(self, message: discord.Message, args: str) -> None:
+        """Handle the lt-speaker command.
+
+        Sets or gets the Lightning Talk speaker name.
 
         Args:
-            interaction: The Discord interaction.
-            name: The name of the speaker (optional).
+            message: The Discord message containing the command.
+            args: The command arguments (speaker name).
         """
-        if name:
+        if args:
             # Set speaker name
-            self.settings.lt_info.speaker = name
+            self.settings.lt_info.speaker = args.strip()
             logger.info(f"Set LT speaker to: {self.settings.lt_info.speaker}")
-            await interaction.response.send_message(
+            await message.channel.send(
                 f"LT発表者を「{self.settings.lt_info.speaker}」に設定しました。"
             )
         else:
             # Get speaker name
             if self.settings.lt_info.speaker:
-                await interaction.response.send_message(
+                await message.channel.send(
                     f"現在のLT発表者: {self.settings.lt_info.speaker}"
                 )
             else:
-                await interaction.response.send_message(
-                    "LT発表者はまだ設定されていません。"
-                )
+                await message.channel.send("LT発表者はまだ設定されていません。")
 
-    @lt_group.command(name="title", description="Set or get the Lightning Talk title")
-    @app_commands.describe(title="The title of the talk")
-    async def lt_title(
-        self, interaction: discord.Interaction, title: str | None = None
-    ) -> None:
-        """Set or get the Lightning Talk title.
+    async def handle_lt_title(self, message: discord.Message, args: str) -> None:
+        """Handle the lt-title command.
+
+        Sets or gets the Lightning Talk title.
 
         Args:
-            interaction: The Discord interaction.
-            title: The title of the talk (optional).
+            message: The Discord message containing the command.
+            args: The command arguments (talk title).
         """
-        if title:
+        if args:
             # Set title
-            self.settings.lt_info.title = title
+            self.settings.lt_info.title = args.strip()
             logger.info(f"Set LT title to: {self.settings.lt_info.title}")
-            await interaction.response.send_message(
+            await message.channel.send(
                 f"LTタイトルを「{self.settings.lt_info.title}」に設定しました。"
             )
         else:
             # Get title
             if self.settings.lt_info.title:
-                await interaction.response.send_message(
+                await message.channel.send(
                     f"現在のLTタイトル: {self.settings.lt_info.title}"
                 )
             else:
-                await interaction.response.send_message(
-                    "LTタイトルはまだ設定されていません。"
-                )
+                await message.channel.send("LTタイトルはまだ設定されていません。")
 
-    @lt_group.command(name="url", description="Set or get the Lightning Talk URL")
-    @app_commands.describe(url="The URL for the Lightning Talk")
-    async def lt_url(
-        self, interaction: discord.Interaction, url: str | None = None
-    ) -> None:
-        """Set or get the Lightning Talk URL.
+    async def handle_lt_url(self, message: discord.Message, args: str) -> None:
+        """Handle the lt-url command.
+
+        Sets or gets the Lightning Talk URL.
 
         Args:
-            interaction: The Discord interaction.
-            url: The URL for the talk (optional).
+            message: The Discord message containing the command.
+            args: The command arguments (URL).
         """
-        if url:
+        if args:
+            url = args.strip()
             # Simple URL validation
             url_pattern = re.compile(
                 r"^https?://"  # http:// or https://
@@ -128,7 +104,7 @@ class LightningTalkCommands(commands.Cog):
             )
 
             if not url_pattern.match(url):
-                await interaction.response.send_message(
+                await message.channel.send(
                     "無効なURLです。有効なURLを入力してください。"
                 )
                 return
@@ -136,28 +112,25 @@ class LightningTalkCommands(commands.Cog):
             # Set URL
             self.settings.lt_info.url = url
             logger.info(f"Set LT URL to: {self.settings.lt_info.url}")
-            await interaction.response.send_message(
+            await message.channel.send(
                 f"LT URLを「{self.settings.lt_info.url}」に設定しました。"
             )
         else:
             # Get URL
             if self.settings.lt_info.url:
-                await interaction.response.send_message(
-                    f"現在のLT URL: {self.settings.lt_info.url}"
-                )
+                await message.channel.send(f"現在のLT URL: {self.settings.lt_info.url}")
             else:
-                await interaction.response.send_message(
+                await message.channel.send(
                     f"LT URLはまだ設定されていません。デフォルトURL: {self.settings.default_url}"
                 )
 
-    @lt_group.command(
-        name="info", description="Display all current Lightning Talk information"
-    )
-    async def lt_info(self, interaction: discord.Interaction) -> None:
-        """Display all current Lightning Talk information.
+    async def handle_lt_info(self, message: discord.Message) -> None:
+        """Handle the lt-info command.
+
+        Displays all current Lightning Talk information.
 
         Args:
-            interaction: The Discord interaction.
+            message: The Discord message containing the command.
         """
         if self.settings.lt_info.is_complete():
             info_text = (
@@ -183,15 +156,16 @@ class LightningTalkCommands(commands.Cog):
                 f"**注意:** {', '.join(missing)}が設定されていません。"
             )
 
-        await interaction.response.send_message(info_text)
+        await message.channel.send(info_text)
 
-    @lt_group.command(name="clear", description="Clear all Lightning Talk information")
-    async def lt_clear(self, interaction: discord.Interaction) -> None:
-        """Clear all Lightning Talk information.
+    async def handle_lt_clear(self, message: discord.Message) -> None:
+        """Handle the lt-clear command.
+
+        Clears all Lightning Talk information.
 
         Args:
-            interaction: The Discord interaction.
+            message: The Discord message containing the command.
         """
         self.settings.lt_info.clear()
         logger.info("Cleared all LT information")
-        await interaction.response.send_message("LT情報をクリアしました。")
+        await message.channel.send("LT情報をクリアしました。")
