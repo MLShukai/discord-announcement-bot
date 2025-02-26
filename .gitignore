@@ -1,6 +1,7 @@
 # Out project
 .ruff_cache
 .DS_Store
+config-overrides.toml
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

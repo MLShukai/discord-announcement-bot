@@ -85,9 +85,9 @@ class TaskScheduler:
                 ):  # 当日だが時間が過ぎた場合
                     days_ahead = 7
 
-                target_time = target_time.replace(
-                    day=target_time.day + days_ahead, hour=hour, minute=minute
-                )
+                # 問題を修正: 日付加算にtimedeltaを使用
+                target_time = target_time + datetime.timedelta(days=days_ahead)
+                target_time = target_time.replace(hour=hour, minute=minute)
 
             # 待機秒数を計算
             seconds_to_wait = (target_time - now).total_seconds()

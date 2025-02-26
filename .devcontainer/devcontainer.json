@@ -25,5 +25,8 @@
       }
     }
   },
-  "shutdownAction": "stopContainer"
+  "shutdownAction": "stopContainer",
+  "containerEnv": {
+    "TZ": "Asia/Tokyo"
+  }
 }

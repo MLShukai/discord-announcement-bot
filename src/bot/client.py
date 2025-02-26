@@ -55,6 +55,9 @@ class AnnounceBotClient(commands.Bot):
         """
         await self._load_extensions()
         await self._setup_scheduled_tasks()
+
+        await self.tree.sync()
+
         self.logger.info("Botのセットアップが完了しました")
 
     async def _load_extensions(self) -> None:
