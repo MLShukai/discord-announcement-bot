@@ -30,7 +30,7 @@ lightning_talk = "今週のML集会はLT会! $mm/$ddの21時半より開催致�
 rest = "今週のML集会はおやすみです。"
 
 # 確認メッセージテンプレート
-confirmation = """$role 今度の日曜 ($month/$day) の予定を確認します。
+confirmation = """$role 今度の$weekday曜日 ($month/$day) の予定を確認します。
 👍: 通常開催
 ⚡: LT開催
 💤: おやすみ

@@ -71,15 +71,7 @@ class AnnouncementService:
     async def send_confirmation(
         self, channel: discord.TextChannel | None, role: discord.Role | None = None
     ) -> discord.Message | None:
-        """確認メッセージをチャンネルに送信し、リアクションを追加する。
-
-        Args:
-            channel: 送信先のDiscordチャンネル
-            role: メンション対象のロール
-
-        Returns:
-            送信されたメッセージ、または送信失敗時はNone
-        """
+        """確認メッセージをチャンネルに送信し、リアクションを追加する。"""
         if channel is None:
             self.logger.error("確認メッセージを送信できません: チャンネルがNoneです")
             return None
@@ -88,7 +80,7 @@ class AnnouncementService:
         template_str = self.config.get(
             ConfigKeys.SECTION_TEMPLATES,
             ConfigKeys.KEY_TEMPLATE_CONFIRMATION,
-            "$role 今度の日曜 ($month/$day) の予定を確認します。",
+            "$role 今度の$weekday曜日 ($month/$day) の予定を確認します。",
         )
         template = Template(template_str)
 
@@ -98,14 +90,19 @@ class AnnouncementService:
         )
         next_date = self.get_next_weekday(announce_weekday)
 
+        # 曜日の日本語名を取得
+        weekday_jp = Weekday.to_jp(next_date.weekday())
+
         # メッセージをフォーマット
         role_mention = role.mention if role else "@everyone"
         content = template.substitute(
-            role=role_mention, month=next_date.month, day=next_date.day
+            role=role_mention,
+            weekday=weekday_jp,
+            month=next_date.month,
+            day=next_date.day,
         )
 
-        # リアクション指示を追加
-        content += "\n👍: 通常開催\n⚡: LT開催\n💤: おやすみ\nリアクションがない場合は通常開催として扱います。"
+        # リアクション指示を追加行を削除 (テンプレートに含める)
 
         try:
             message = await channel.send(content)
