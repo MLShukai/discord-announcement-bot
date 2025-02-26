@@ -14,9 +14,9 @@ announce_channel_id = ""
 
 # 権限設定
 [permissions]
-admin_roles = ["Administrator"]
-moderator_roles = ["Moderator"]
-lt_admin_roles = ["LT管理者"]
+admin_roles = ["Administrator", "告知管理者"]
+moderator_roles = ["Moderator", "告知管理者"]
+lt_admin_roles = ["LT管理者", "告知管理者"]
 
 # メッセージテンプレート
 [templates]
