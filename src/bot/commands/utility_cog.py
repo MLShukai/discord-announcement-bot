@@ -154,6 +154,7 @@ class UtilityCog(commands.Cog):
                 "`/lt speaker [name]` - 発表者を設定/表示",
                 "`/lt title [title]` - タイトルを設定/表示",
                 "`/lt url [url]` - URLを設定/表示",
+                "`/lt set [title] [speaker] [url]` - LT情報を一括設定（URLはオプション）",
                 "`/lt info` - 現在のLT情報を表示",
                 "`/lt clear` - LT情報をクリア",
                 "",
@@ -162,6 +163,8 @@ class UtilityCog(commands.Cog):
                 "`/config time announce [time]` - 告知時刻を設定/表示",
                 "`/config weekday confirm [day]` - 確認曜日を設定/表示",
                 "`/config weekday announce [day]` - 告知曜日を設定/表示",
+                "`/config confirm [day] [time]` - 確認の曜日と時刻を一括設定",
+                "`/config announce [day] [time]` - 告知の曜日と時刻を一括設定",
                 "`/config role [role]` - アクションロールを設定/表示",
                 "`/config channel action [channel]` - アクションチャンネルを設定/表示",
                 "`/config channel announce [channel]` - 告知チャンネルを設定/表示",
@@ -198,6 +201,7 @@ class UtilityCog(commands.Cog):
                     "`/lt speaker [name]` - 発表者名を設定または取得します。名前を指定しない場合は現在の設定を表示します。",
                     "`/lt title [title]` - 発表タイトルを設定または取得します。タイトルを指定しない場合は現在の設定を表示します。",
                     "`/lt url [url]` - イベントのURLを設定または取得します。URLを指定しない場合は現在の設定を表示します。",
+                    "`/lt set [title] [speaker] [url]` - LT情報を一括設定します。タイトルと発表者は必須、URLはオプションです。",
                     "`/lt info` - 現在設定されているLT情報をすべて表示します。",
                     "`/lt clear` - LT情報をすべてクリアします。",
                     "",
@@ -216,6 +220,10 @@ class UtilityCog(commands.Cog):
                     "`/config weekday confirm [day]` - 確認メッセージの曜日を設定または取得します。曜日は3文字の英語略称（Mon, Tue, ...）です。",
                     "`/config weekday announce [day]` - 告知メッセージの曜日を設定または取得します。曜日は3文字の英語略称（Mon, Tue, ...）です。",
                     "",
+                    "**一括日時設定:**",
+                    "`/config confirm [day] [time]` - 確認メッセージの曜日と時刻を一括設定します。",
+                    "`/config announce [day] [time]` - 告知メッセージの曜日と時刻を一括設定します。",
+                    "",
                     "**ロール設定:**",
                     "`/config role [role]` - アクションロールを設定または取得します。",
                     "",
@@ -228,7 +236,6 @@ class UtilityCog(commands.Cog):
                     "",
                     "**権限:** これらのコマンドは 'Moderator' または 'Administrator' ロールを持つユーザーのみが実行できます。",
                 ]
-
             elif command == "status":
                 help_text = [
                     "**ステータスコマンド**",

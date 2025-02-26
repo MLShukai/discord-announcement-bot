@@ -63,137 +63,22 @@ class ConfigCog(commands.Cog):
         name="time", description="時間設定を管理", parent=config_group
     )
 
-    @config_time.command(name="confirm")
-    @app_commands.describe(time="確認メッセージの時間 (HH:MM形式)")
-    async def config_time_confirm(
-        self, interaction: discord.Interaction, time: str | None = None
-    ):
-        """確認メッセージの時刻を設定または取得する。
-
-        Args:
-            interaction: コマンドインタラクション
-            time: 設定する時刻（HH:MM形式）、またはNoneで現在の値を取得
-        """
-        # 現在の値を取得する場合
-        if time is None:
-            current_time = self.bot.config.get(
-                ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_CONFIRM_TIME, "21:30"
-            )
-            await interaction.response.send_message(
-                f"現在の確認時刻: {current_time}", ephemeral=True
-            )
-            return
-
-        # 設定時は権限チェック
-        if not self._check_admin_permissions(interaction):
-            await interaction.response.send_message(
-                "設定を変更する権限がありません。", ephemeral=True
-            )
-            return
-
-        # 時間形式バリデーション
-        if not re.match(r"^([01]?[0-9]|2[0-3]):([0-5][0-9])$", time):
-            await interaction.response.send_message(
-                "無効な時間形式です。HH:MM形式で入力してください。", ephemeral=True
-            )
-            return
-
-        # 設定を更新
-        self.bot.config.set(
-            ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_CONFIRM_TIME, time
-        )
-
-        # スケジュールタスクを更新
-        confirm_weekday = self.bot.config.get(
-            ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_CONFIRM_WEEKDAY, "Thu"
-        )
-        self.bot.scheduler.schedule_daily_task(
-            "confirmation", time, confirm_weekday, self.bot.confirmation_task
-        )
-
-        await interaction.response.send_message(
-            f"確認時刻を {time} に設定しました。", ephemeral=True
-        )
-
-    @config_time.command(name="announce")
-    @app_commands.describe(time="告知メッセージの時間 (HH:MM形式)")
-    async def config_time_announce(
-        self, interaction: discord.Interaction, time: str | None = None
-    ):
-        """告知メッセージの時刻を設定または取得する。
-
-        Args:
-            interaction: コマンドインタラクション
-            time: 設定する時刻（HH:MM形式）、またはNoneで現在の値を取得
-        """
-        # 現在の値を取得する場合
-        if time is None:
-            current_time = self.bot.config.get(
-                ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_ANNOUNCE_TIME, "21:30"
-            )
-            await interaction.response.send_message(
-                f"現在の告知時刻: {current_time}", ephemeral=True
-            )
-            return
-
-        # 設定時は権限チェック
-        if not self._check_admin_permissions(interaction):
-            await interaction.response.send_message(
-                "設定を変更する権限がありません。", ephemeral=True
-            )
-            return
-
-        # 時間形式バリデーション
-        if not re.match(r"^([01]?[0-9]|2[0-3]):([0-5][0-9])$", time):
-            await interaction.response.send_message(
-                "無効な時間形式です。HH:MM形式で入力してください。", ephemeral=True
-            )
-            return
-
-        # 設定を更新
-        self.bot.config.set(
-            ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_ANNOUNCE_TIME, time
-        )
-
-        # スケジュールタスクを更新
-        announce_weekday = self.bot.config.get(
-            ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_ANNOUNCE_WEEKDAY, "Sun"
-        )
-        self.bot.scheduler.schedule_daily_task(
-            "announcement", time, announce_weekday, self.bot.announcement_task
-        )
-
-        await interaction.response.send_message(
-            f"告知時刻を {time} に設定しました。", ephemeral=True
-        )
-
-    # 曜日設定
-    config_weekday = app_commands.Group(
-        name="weekday", description="曜日設定を管理", parent=config_group
+    @config_group.command(name="confirm")
+    @app_commands.describe(
+        day="確認メッセージの曜日 (3文字の英語略称: Mon, Tue, Wed, Thu, Fri, Sat, Sun)",
+        time="確認メッセージの時間 (HH:MM形式)",
     )
-
-    @config_weekday.command(name="confirm")
-    @app_commands.describe(day="確認メッセージの曜日 (3文字の英語略称)")
-    async def config_weekday_confirm(
-        self, interaction: discord.Interaction, day: str | None = None
+    async def config_confirm(
+        self, interaction: discord.Interaction, day: str, time: str
     ):
-        """確認メッセージの曜日を設定または取得する。
+        """確認メッセージの曜日と時刻を同時に設定する。
 
         Args:
             interaction: コマンドインタラクション
-            day: 設定する曜日（3文字略称）、またはNoneで現在の値を取得
+            day: 設定する曜日（3文字略称）
+            time: 設定する時刻（HH:MM形式）
         """
-        # 現在の値を取得する場合
-        if day is None:
-            current_day = self.bot.config.get(
-                ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_CONFIRM_WEEKDAY, "Thu"
-            )
-            await interaction.response.send_message(
-                f"現在の確認曜日: {current_day}", ephemeral=True
-            )
-            return
-
-        # 設定時は権限チェック
+        # 権限チェック
         if not self._check_admin_permissions(interaction):
             await interaction.response.send_message(
                 "設定を変更する権限がありません。", ephemeral=True
@@ -217,25 +102,32 @@ class ConfigCog(commands.Cog):
             )
             return
 
+        # 時間形式バリデーション
+        if not re.match(r"^([01]?[0-9]|2[0-3]):([0-5][0-9])$", time):
+            await interaction.response.send_message(
+                "無効な時間形式です。HH:MM形式で入力してください。", ephemeral=True
+            )
+            return
+
         # 設定を更新
         self.bot.config.set(
             ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_CONFIRM_WEEKDAY, day
         )
+        self.bot.config.set(
+            ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_CONFIRM_TIME, time
+        )
 
         # スケジュールタスクを更新
-        confirm_time = self.bot.config.get(
-            ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_CONFIRM_TIME, "21:30"
-        )
         self.bot.scheduler.schedule_daily_task(
-            "confirmation", confirm_time, day, self.bot.confirmation_task
+            "confirmation", time, day, self.bot.confirmation_task
         )
 
         await interaction.response.send_message(
-            f"確認曜日を {day} に設定しました。", ephemeral=True
+            f"確認メッセージを {day} {time} に設定しました。", ephemeral=True
         )
 
-    @config_weekday_confirm.autocomplete("day")
-    async def weekday_autocomplete(
+    @config_confirm.autocomplete("day")
+    async def confirm_day_autocomplete(
         self, interaction: discord.Interaction, current: str
     ) -> list[app_commands.Choice[str]]:
         """曜日選択のオートコンプリートを提供する。
@@ -262,28 +154,22 @@ class ConfigCog(commands.Cog):
             if current.lower() in day.lower()
         ]
 
-    @config_weekday.command(name="announce")
-    @app_commands.describe(day="告知メッセージの曜日 (3文字の英語略称)")
-    async def config_weekday_announce(
-        self, interaction: discord.Interaction, day: str | None = None
+    @config_group.command(name="announce")
+    @app_commands.describe(
+        day="告知メッセージの曜日 (3文字の英語略称: Mon, Tue, Wed, Thu, Fri, Sat, Sun)",
+        time="告知メッセージの時間 (HH:MM形式)",
+    )
+    async def config_announce(
+        self, interaction: discord.Interaction, day: str, time: str
     ):
-        """告知メッセージの曜日を設定または取得する。
+        """告知メッセージの曜日と時刻を同時に設定する。
 
         Args:
             interaction: コマンドインタラクション
-            day: 設定する曜日（3文字略称）、またはNoneで現在の値を取得
+            day: 設定する曜日（3文字略称）
+            time: 設定する時刻（HH:MM形式）
         """
-        # 現在の値を取得する場合
-        if day is None:
-            current_day = self.bot.config.get(
-                ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_ANNOUNCE_WEEKDAY, "Sun"
-            )
-            await interaction.response.send_message(
-                f"現在の告知曜日: {current_day}", ephemeral=True
-            )
-            return
-
-        # 設定時は権限チェック
+        # 権限チェック
         if not self._check_admin_permissions(interaction):
             await interaction.response.send_message(
                 "設定を変更する権限がありません。", ephemeral=True
@@ -307,25 +193,32 @@ class ConfigCog(commands.Cog):
             )
             return
 
+        # 時間形式バリデーション
+        if not re.match(r"^([01]?[0-9]|2[0-3]):([0-5][0-9])$", time):
+            await interaction.response.send_message(
+                "無効な時間形式です。HH:MM形式で入力してください。", ephemeral=True
+            )
+            return
+
         # 設定を更新
         self.bot.config.set(
             ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_ANNOUNCE_WEEKDAY, day
         )
+        self.bot.config.set(
+            ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_ANNOUNCE_TIME, time
+        )
 
         # スケジュールタスクを更新
-        announce_time = self.bot.config.get(
-            ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_ANNOUNCE_TIME, "21:30"
-        )
         self.bot.scheduler.schedule_daily_task(
-            "announcement", announce_time, day, self.bot.announcement_task
+            "announcement", time, day, self.bot.announcement_task
         )
 
         await interaction.response.send_message(
-            f"告知曜日を {day} に設定しました。", ephemeral=True
+            f"告知メッセージを {day} {time} に設定しました。", ephemeral=True
         )
 
-    @config_weekday_announce.autocomplete("day")
-    async def weekday_announce_autocomplete(
+    @config_announce.autocomplete("day")
+    async def announce_day_autocomplete(
         self, interaction: discord.Interaction, current: str
     ) -> list[app_commands.Choice[str]]:
         """曜日選択のオートコンプリートを提供する。
@@ -634,15 +527,13 @@ class ConfigCog(commands.Cog):
         )
         self.logger.info(f"全設定が {interaction.user} によってリセットされました")
 
-    @config_time_confirm.error
-    @config_time_announce.error
-    @config_weekday_confirm.error
-    @config_weekday_announce.error
     @config_role.error
     @config_channel_action.error
     @config_channel_announce.error
     @config_show.error
     @config_reset.error
+    @config_confirm.error
+    @config_announce.error
     async def config_command_error(
         self, interaction: discord.Interaction, error: app_commands.AppCommandError
     ):

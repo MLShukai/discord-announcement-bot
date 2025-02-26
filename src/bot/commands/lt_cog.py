@@ -154,6 +154,60 @@ class LtCog(commands.Cog):
             f"URLを '{url}' に設定しました。", ephemeral=True
         )
 
+    @lt_group.command(name="set")
+    @app_commands.describe(
+        title="発表のタイトル",
+        speaker="発表者の名前",
+        url="発表またはイベントのURL（オプション）",
+    )
+    async def lt_set(
+        self,
+        interaction: discord.Interaction,
+        title: str,
+        speaker: str,
+        url: str | None = None,
+    ):
+        """LT情報を一度に設定する。
+
+        Args:
+            interaction: コマンドインタラクション
+            title: 設定するタイトル
+            speaker: 設定する発表者名
+            url: 設定するURL（オプション）
+        """
+        # 権限チェック
+        if not self._check_lt_admin_permissions(interaction):
+            await interaction.response.send_message(
+                "LT情報を設定する権限がありません。", ephemeral=True
+            )
+            return
+
+        # LT情報を設定
+        self.bot.announcement_service.lt_title = title
+        self.bot.announcement_service.lt_speaker = speaker
+
+        # 完了メッセージ構築
+        response_parts = [
+            "LT情報を設定しました。",
+            f"タイトル: {title}",
+            f"発表者: {speaker}",
+        ]
+
+        if url is not None:
+            self.bot.announcement_service.lt_url = url
+            response_parts.append(f"URL: {url}")
+        else:
+            # デフォルトURLを設定
+            default_url = self.bot.config.get(
+                ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_DEFAULT_URL, ""
+            )
+            self.bot.announcement_service.lt_url = default_url
+
+            response_parts.append(f"URL: {default_url} (デフォルト)")
+        await interaction.response.send_message(
+            "\n".join(response_parts), ephemeral=True
+        )
+
     @lt_group.command(name="info")
     async def lt_info(self, interaction: discord.Interaction):
         """現在のLT情報をすべて表示する。
@@ -214,6 +268,7 @@ class LtCog(commands.Cog):
     @lt_url.error
     @lt_info.error
     @lt_clear.error
+    @lt_set.error
     async def lt_command_error(
         self, interaction: discord.Interaction, error: app_commands.AppCommandError
     ):
