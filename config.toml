@@ -1,0 +1,38 @@
+# 基本設定
+[settings]
+announce_time = "21:30"
+confirm_time = "21:30"
+action_role = "@GesonAnko"
+confirm_weekday = "Thu"
+announce_weekday = "Sun"
+default_url = "https://x.com/VRC_ML_hangout/status/1779863235988242925"
+
+# チャンネル設定
+[channels]
+action_channel_id = ""
+announce_channel_id = ""
+
+# 権限設定
+[permissions]
+admin_roles = ["Administrator"]
+moderator_roles = ["Moderator"]
+lt_admin_roles = ["LT管理者"]
+
+# メッセージテンプレート
+[templates]
+# 通常開催テンプレート
+regular = "今週の$mm/$ddのML集会も21時半より開催致します。今週はまったり雑談会です\n$url"
+
+# LT開催テンプレート
+lightning_talk = "今週のML集会はLT会! $mm/$ddの21時半より開催致します。\n$speaker_nameさんより「$title」を行いますので、ぜひみなさんお越しください！\n$url"
+
+# おやすみテンプレート
+rest = "今週のML集会はおやすみです。"
+
+# 確認メッセージテンプレート
+confirmation = """$role 今度の日曜 ($month/$day) の予定を確認します。
+👍: 通常開催
+⚡: LT開催
+💤: おやすみ
+
+リアクションがない場合は通常開催として扱います。"""

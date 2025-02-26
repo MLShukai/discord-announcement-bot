@@ -52,7 +52,7 @@ exclude = [
 strict = ["./src/"]
 reportMissingTypeStubs = false
 reportImplicitOverride = true
-reportPrivateUsage = "warning"
+reportPrivateUsage = false
 reportUnknownVariableType=false
 
 [tool.ruff]
