@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     make \
     git \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
