@@ -1,148 +1,125 @@
-"""Scheduler for periodic job execution.
-
-This module implements a scheduler for running jobs at specific times on
-specific days of the week.
-"""
+# src/bot/scheduler/scheduler.py
+"""定期的なタスク実行を担当するスケジューラモジュール。"""
 
 import asyncio
+import datetime
 import logging
 from collections.abc import Callable, Coroutine
-from datetime import datetime, timedelta
 from typing import Any
 
-from bot.config.settings import BotSettings
-
-logger = logging.getLogger(__name__)
+from ..constants import Weekday
 
 
-class JobScheduler:
-    """Scheduler for running jobs at specific times.
+class TaskScheduler:
+    """タスクスケジューラクラス。
 
-    Handles the scheduling and execution of jobs at configured times on
-    configured days of the week.
+    指定した時間と曜日に定期的にタスクを実行する。
     """
 
-    # Mapping of weekday names to numbers (0 is Monday, 6 is Sunday)
-    WEEKDAY_MAP = {"Mon": 0, "Tue": 1, "Wed": 2, "Thu": 3, "Fri": 4, "Sat": 5, "Sun": 6}
+    def __init__(self):
+        """タスクスケジューラを初期化する。"""
+        self.logger = logging.getLogger("announce-bot.scheduler")
+        self.tasks: dict[str, asyncio.Task[None]] = {}
 
-    def __init__(self, settings: BotSettings):
-        """Initialize the job scheduler.
-
-        Args:
-            settings: The bot settings containing schedule configuration.
-        """
-        self.settings = settings
-        self.jobs: dict[str, list[dict[str, Any]]] = {"confirm": [], "announce": []}
-        self.running = False
-        self.tasks: list[asyncio.Task[None]] = []
-
-    def add_confirmation_job(
-        self, job: Callable[..., Coroutine[Any, Any, None]], *args: Any, **kwargs: Any
+    def schedule_daily_task(
+        self,
+        task_id: str,
+        time_str: str,
+        weekday: str | None,
+        callback: Callable[[], Coroutine[Any, Any, None]],
     ) -> None:
-        """Add a job to run on the confirmation weekday.
+        """指定した時間と曜日に実行するタスクをスケジュールする。
 
         Args:
-            job: The coroutine function to run.
-            *args: Positional arguments to pass to the job.
-            **kwargs: Keyword arguments to pass to the job.
+            task_id: タスクの一意識別子
+            time_str: 実行時間 (HH:MM形式)
+            weekday: 実行曜日 (3文字略称) または毎日実行の場合はNone
+            callback: タスク実行時に呼び出すコルーチン
         """
-        self.jobs["confirm"].append({"func": job, "args": args, "kwargs": kwargs})
+        # 同じIDの既存タスクがある場合はキャンセル
+        if task_id in self.tasks and not self.tasks[task_id].done():
+            self.tasks[task_id].cancel()
+            self.logger.info(f"既存のタスクをキャンセルしました: {task_id}")
 
-    def add_announcement_job(
-        self, job: Callable[..., Coroutine[Any, Any, None]], *args: Any, **kwargs: Any
+        # 新しいタスクを作成して開始
+        self.tasks[task_id] = asyncio.create_task(
+            self._run_at_time(time_str, weekday, callback)
+        )
+
+        when = f"毎日 {time_str}" if weekday is None else f"{weekday}曜日 {time_str}"
+        self.logger.info(f"タスク {task_id} をスケジュールしました: {when}")
+
+    async def _run_at_time(
+        self,
+        time_str: str,
+        weekday: str | None,
+        callback: Callable[[], Coroutine[Any, Any, None]],
     ) -> None:
-        """Add a job to run on the announcement weekday.
+        """指定時間と曜日にタスクを実行する内部メソッド。
 
         Args:
-            job: The coroutine function to run.
-            *args: Positional arguments to pass to the job.
-            **kwargs: Keyword arguments to pass to the job.
+            time_str: 実行時間 (HH:MM形式)
+            weekday: 実行曜日 (3文字略称) または毎日実行の場合はNone
+            callback: タスク実行時に呼び出すコルーチン
         """
-        self.jobs["announce"].append({"func": job, "args": args, "kwargs": kwargs})
+        target_weekday = Weekday.to_int(weekday) if weekday else None
 
-    def start(self) -> None:
-        """Start the scheduler.
+        while True:
+            now = datetime.datetime.now()
 
-        Creates tasks for each job type and starts them running.
-        """
-        self.running = True
-        self.tasks = [
-            asyncio.create_task(self._run_jobs_on_schedule("confirm")),
-            asyncio.create_task(self._run_jobs_on_schedule("announce")),
-        ]
-        logger.info("Scheduler started")
+            # 対象時間を解析
+            hour, minute = map(int, time_str.split(":"))
+            target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
-    def stop(self) -> None:
-        """Stop the scheduler.
+            # 対象時間が当日の過去の場合は明日に設定
+            if target_time <= now:
+                target_time += datetime.timedelta(days=1)
 
-        Cancels all running tasks and marks the scheduler as stopped.
-        """
-        self.running = False
-        for task in self.tasks:
-            task.cancel()
-        logger.info("Scheduler stopped")
-
-    async def _run_jobs_on_schedule(self, job_type: str) -> None:
-        """Run jobs of the specified type on schedule.
-
-        Continuously checks if it's time to run the jobs and executes them
-        when the scheduled time arrives.
-
-        Args:
-            job_type: The type of jobs to run ("confirm" or "announce").
-        """
-        while self.running:
-            try:
-                # Determine which weekday and time to use
-                if job_type == "confirm":
-                    target_weekday = self.WEEKDAY_MAP.get(
-                        self.settings.confirm_weekday, 3
-                    )  # Default to Thu
-                    target_time = self.settings.confirm_time
-                else:  # "announce"
-                    target_weekday = self.WEEKDAY_MAP.get(
-                        self.settings.announce_weekday, 6
-                    )  # Default to Sun
-                    target_time = self.settings.announce_time
-
-                # Calculate time until next scheduled run
-                now = datetime.now()
-                days_ahead = (target_weekday - now.weekday()) % 7
-
-                # If it's today and the time has already passed, schedule for next week
-                if days_ahead == 0 and now.time() >= target_time:
+            # 特定曜日指定がある場合は日付を調整
+            if target_weekday is not None:
+                days_ahead = target_weekday - target_time.weekday()
+                if days_ahead < 0:  # 今週の指定曜日が過ぎた場合
+                    days_ahead += 7
+                elif (
+                    days_ahead == 0 and target_time.time() < now.time()
+                ):  # 当日だが時間が過ぎた場合
                     days_ahead = 7
 
-                next_run = datetime.combine(
-                    now.date() + timedelta(days=days_ahead), target_time
+                target_time = target_time.replace(
+                    day=target_time.day + days_ahead, hour=hour, minute=minute
                 )
 
-                # Calculate seconds until next run
-                seconds_until_next_run = (next_run - now).total_seconds()
+            # 待機秒数を計算
+            seconds_to_wait = (target_time - now).total_seconds()
+            self.logger.debug(
+                f"{seconds_to_wait:.1f}秒待機します（目標時刻: {target_time}）"
+            )
 
-                logger.info(
-                    f"Next {job_type} jobs scheduled to run in "
-                    f"{seconds_until_next_run:.2f} seconds "
-                    f"({next_run.strftime('%Y-%m-%d %H:%M:%S')})"
+            try:
+                # 対象時間まで待機
+                await asyncio.sleep(seconds_to_wait)
+
+                # コールバックを実行
+                self.logger.info(
+                    f"スケジュールされたタスクを実行します: {datetime.datetime.now()}"
                 )
-
-                # Wait until the scheduled time
-                await asyncio.sleep(seconds_until_next_run)
-
-                # Run all jobs of this type
-                for job in self.jobs[job_type]:
-                    try:
-                        await job["func"](*job["args"], **job["kwargs"])
-                    except Exception as e:
-                        logger.error(f"Error running {job_type} job: {e}")
-
-                # Sleep a bit to avoid running jobs multiple times if execution is fast
-                await asyncio.sleep(1)
+                await callback()
 
             except asyncio.CancelledError:
-                logger.info(f"{job_type} scheduler task cancelled")
+                self.logger.info("タスクがキャンセルされました")
                 break
             except Exception as e:
-                logger.error(f"Error in {job_type} scheduler: {e}")
-                # Sleep a bit before retrying
-                await asyncio.sleep(10)
+                self.logger.error(
+                    f"スケジュールされたタスクでエラーが発生しました: {e}"
+                )
+                # 連続エラーを避けるため少し待機
+                await asyncio.sleep(60)
+
+    def cancel_all_tasks(self) -> None:
+        """すべてのスケジュールされたタスクをキャンセルする。"""
+        for task_id, task in self.tasks.items():
+            if not task.done():
+                task.cancel()
+                self.logger.info(f"タスクをキャンセルしました: {task_id}")
+
+        self.tasks.clear()

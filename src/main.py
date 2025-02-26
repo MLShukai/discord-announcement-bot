@@ -1,100 +1,97 @@
-"""Entry point for the Discord announcement bot.
-
-This module sets up logging and starts the bot.
-"""
+# src/main.py
+"""Botのメインエントリポイント。"""
 
 import asyncio
 import logging
 import os
-import sys
-from logging.handlers import RotatingFileHandler
-from pathlib import Path
+import signal
 
-import discord
-import dotenv
+from dotenv import load_dotenv
 
-from bot.client import AnnouncementBot
-from bot.config.settings import SettingsManager
+from bot.client import AnnounceBotClient
+from bot.constants import EnvKeys
+from bot.utils.logger import BotLogger
+
+# Botインスタンス
+bot = None
+
+# シャットダウンフラグ
+shutdown_flag = False
 
 
-def setup_logging(log_dir: str | None = None) -> None:
-    """Set up logging configuration.
+async def shutdown(signal: signal.Signals | None = None):
+    """Botをグレースフルシャットダウンする。
 
     Args:
-        log_dir: Directory to store log files. If None, logs to console only.
+        signal: 受信したシグナル（オプション）
     """
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
+    global shutdown_flag
 
-    # Create formatter
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-
-    # Add console handler
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
-
-    # Add file handler if log directory is specified
-    if log_dir:
-        log_path = Path(log_dir)
-        log_path.mkdir(parents=True, exist_ok=True)
-
-        file_handler = RotatingFileHandler(
-            log_path / "bot.log",
-            maxBytes=10 * 1024 * 1024,  # 10 MB
-            backupCount=5,
-        )
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
-
-
-async def main() -> None:
-    """Start the bot.
-
-    Loads environment variables, sets up logging, and starts the bot.
-    """
-    # Set up logging
-    log_dir = os.getenv("LOG_DIR")
-    setup_logging(log_dir)
-
-    logger = logging.getLogger(__name__)
-    logger.info("Starting Discord announcement bot")
-
-    # Get Discord token
-    token = os.getenv("DISCORD_TOKEN")
-    if not token:
-        logger.error("DISCORD_TOKEN environment variable not set")
+    if shutdown_flag:
         return
 
-    # Load settings
-    config_path = os.getenv("CONFIG_PATH", "config.toml")
-    settings_manager = SettingsManager(config_path)
+    shutdown_flag = True
+    logger = logging.getLogger("announce-bot")
 
-    # Create and start bot
-    bot = AnnouncementBot(settings_manager)
+    if signal:
+        logger.info(f"シグナル {signal.name} を受信しました。シャットダウンします...")
+    else:
+        logger.info("シャットダウンします...")
+
+    if bot is not None:
+        # スケジュールタスクをキャンセル
+        if hasattr(bot, "scheduler"):
+            bot.scheduler.cancel_all_tasks()
+            logger.info("スケジュールタスクをキャンセルしました")
+
+        # Botをクローズ
+        await bot.close()
+        logger.info("Botを終了しました")
+
+    # イベントループを停止
+    loop = asyncio.get_event_loop()
+    if not loop.is_closed():
+        loop.stop()
+
+
+async def main():
+    """Botのメインエントリポイント。"""
+    global bot
+
+    # 環境変数を読み込み
+    load_dotenv()
+
+    # ロガーを設定
+    logger = BotLogger.setup()
+    logger.info("Discord アナウンスBotを起動しています...")
+
+    # トークンチェック
+    token = os.getenv(EnvKeys.DISCORD_TOKEN)
+    if not token:
+        logger.error(
+            "DISCORD_TOKENが設定されていません。.envファイルを確認してください。"
+        )
+        return
+
+    # ハンドラを設定
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop = asyncio.get_event_loop()
+        loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(shutdown(s)))
 
     try:
-        logger.info("Connecting to Discord")
+        # Botを初期化して起動
+        bot = AnnounceBotClient()
         await bot.start(token)
-    except discord.LoginFailure:
-        logger.error("Invalid Discord token")
     except Exception as e:
-        logger.error(f"Error starting bot: {e}")
+        logger.error(f"エラーが発生しました: {e}")
+        await shutdown()
     finally:
-        if not bot.is_closed():
-            await bot.close()
+        if not shutdown_flag:
+            await shutdown()
 
 
 if __name__ == "__main__":
-    dotenv.load_dotenv()
-    # Set up asyncio event loop
-    loop = asyncio.get_event_loop()
-
     try:
-        loop.run_until_complete(main())
+        asyncio.run(main())
     except KeyboardInterrupt:
-        print("Bot stopped by user")
-    finally:
-        loop.close()
+        pass  # シグナルハンドラが処理するため、ここでは何もしない
