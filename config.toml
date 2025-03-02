@@ -21,10 +21,10 @@ lt_admin_roles = ["LT管理者", "告知管理者"]
 # メッセージテンプレート
 [templates]
 # 通常開催テンプレート
-regular = "今週の$mm/$ddのML集会も21時半より開催致します。今週はまったり雑談会です\n$url"
+regular = "今週のML集会も21時半より開催致します。今週はまったり雑談会です\n$url"
 
 # LT開催テンプレート
-lightning_talk = "今週のML集会はLT会! $mm/$ddの21時半より開催致します。\n$speaker_nameさんより「$title」を行いますので、ぜひみなさんお越しください！\n$url"
+lightning_talk = "今週のML集会はLT会! 21時半より開催致します。\n$speaker_nameさんより「$title」を行いますので、ぜひみなさんお越しください！\n$url"
 
 # おやすみテンプレート
 rest = "今週のML集会はおやすみです。"
