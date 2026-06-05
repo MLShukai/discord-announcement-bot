@@ -53,6 +53,8 @@
       "Write(memory/**)"
     ],
     "deny": [
+      "Read(.env)",
+      "Read(./.env)",
       "Bash(rm -rf /:*)",
       "Bash(sudo:*)",
       "Bash(git -C:*)"
