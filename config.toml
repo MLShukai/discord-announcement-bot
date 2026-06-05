@@ -1,15 +1,17 @@
 # 基本設定
 [settings]
-announce_time = "21:30"
-confirm_time = "21:30"
-action_role = "@GesonAnko"
-confirm_weekday = "Thu"
+# 初回告知 (今週の予定) を投稿する曜日・時刻
 announce_weekday = "Sun"
+announce_time = "12:00"
+# ML集会の開催曜日・時刻 (告知文面の表示と日付計算に使用)
+event_weekday = "Wed"
+event_time = "21:30"
+# 初回告知でメンションするロール
+action_role = "告知管理者"
 default_url = "https://x.com/VRC_ML_hangout/status/1779863235988242925"
 
 # チャンネル設定
 [channels]
-action_channel_id = ""
 announce_channel_id = ""
 
 # 権限設定
@@ -19,20 +21,15 @@ moderator_roles = ["Moderator", "告知管理者"]
 lt_admin_roles = ["LT管理者", "告知管理者"]
 
 # メッセージテンプレート
+# 利用可能な変数: $month $day $weekday $time $url (LTは加えて $speaker_name $title)
 [templates]
-# 通常開催テンプレート
-regular = "今週のML集会も21時半より開催致します。今週はまったり雑談会です\n$url"
+# --- 初回告知 (日曜): 今週の予定を告知。末尾にリアクション凡例が自動付与される ---
+announce_regular = "今週のML集会は $month/$day($weekday) $time から、まったり雑談会です！\n$url"
+announce_lightning_talk = "今週のML集会は $month/$day($weekday) $time からLT会！\n$speaker_name さんより「$title」を行います。ぜひお越しください！\n$url"
+announce_workspace = "今週のML集会は $month/$day($weekday) $time から作業会です！みなさんぜひご自由にご参加ください〜\n$url"
+announce_rest = "今週のML集会はおやすみです。"
 
-# LT開催テンプレート
-lightning_talk = "今週のML集会はLT会! 21時半より開催致します。\n$speaker_nameさんより「$title」を行いますので、ぜひみなさんお越しください！\n$url"
-
-# おやすみテンプレート
-rest = "今週のML集会はおやすみです。"
-
-# 確認メッセージテンプレート
-confirmation = """$role 今度の$weekday曜日 ($month/$day) の予定を確認します。
-👍: 通常開催
-⚡: LT開催
-💤: おやすみ
-
-リアクションがない場合は通常開催として扱います。"""
+# --- 開催告知 (/open): インスタンスを開けた際に手動で投稿 ---
+open_regular = "ML集会のインスタンスを開けました！まったりやっていきましょう〜\n$url"
+open_lightning_talk = "ML集会(LT会)を開始します！\n$speaker_name さんより「$title」\nぜひお越しください！\n$url"
+open_workspace = "作業会のインスタンスを開けました！ご自由にご参加ください〜\n$url"

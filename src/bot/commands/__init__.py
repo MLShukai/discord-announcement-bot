@@ -2,7 +2,7 @@
 
 from .config_cog import ConfigCog
 from .lt_cog import LtCog
-from .manual_cog import ManualCog
+from .session_cog import SessionCog
 from .utility_cog import UtilityCog
 
-__all__ = ["LtCog", "ConfigCog", "UtilityCog", "ManualCog"]
+__all__ = ["LtCog", "ConfigCog", "UtilityCog", "SessionCog"]

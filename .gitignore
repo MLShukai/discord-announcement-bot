@@ -2,6 +2,8 @@
 .ruff_cache
 .DS_Store
 config-overrides.toml
+# 実行時状態・設定差分の永続化ディレクトリ
+data/
 .claude/settings.local.json
 
 # Byte-compiled / optimized / DLL files

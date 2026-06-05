@@ -8,9 +8,18 @@ services:
       - .env
     volumes:
       - ./logs:/var/log/discord-bot
+      # 設定差分・実行時状態を永続化 (再起動・再ビルドで保持)。
+      # named volume にすることでイメージの botuser 所有権が引き継がれ、
+      # 非root実行でも書き込み権限の問題が起きない。
+      - bot-data:/app/data
+      # 既定設定をホストから差し替え可能 (read-only)
+      - ./config.toml:/app/config.toml:ro
     healthcheck:
       test: ["CMD", "pgrep", "-f", "python.*src/main.py"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 5s
+
+volumes:
+  bot-data:

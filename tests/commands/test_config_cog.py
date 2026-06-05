@@ -1,149 +1,70 @@
 # tests/commands/test_config_cog.py
 """Tests for the config commands module."""
 
-import re
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import discord
 import pytest
-from discord import app_commands
 
-from bot.client import AnnounceBotClient
 from bot.commands.config_cog import ConfigCog
-from bot.constants import ConfigKeys, Weekday
-
-
-@pytest.fixture
-def mock_bot():
-    """Create a mock bot client for testing."""
-    bot = MagicMock(spec=AnnounceBotClient)
-    bot.config = MagicMock()
-    bot.scheduler = MagicMock()
-
-    # Mock confirmation and announcement tasks
-    bot.confirmation_task = AsyncMock()
-    bot.announcement_task = AsyncMock()
-
-    return bot
+from bot.constants import ConfigKeys
+from tests.conftest import make_interaction, make_member
 
 
 @pytest.fixture
 def config_cog(mock_bot):
-    """Create a ConfigCog instance for testing."""
+    """Create a ConfigCog with a stub bot."""
     return ConfigCog(mock_bot)
 
 
-@pytest.fixture
-def mock_interaction():
-    """Create a mock interaction for testing commands."""
-    interaction = AsyncMock(spec=discord.Interaction)
-    interaction.response = AsyncMock()
-    interaction.user = MagicMock(spec=discord.Member)
-    interaction.user.roles = []
-    return interaction
-
-
-def test_check_admin_permissions_no_permission(config_cog, mock_interaction):
-    """Test permission check when user has no permissions."""
-    # Set up roles
-    role = MagicMock(spec=discord.Role)
-    role.name = "Regular"
-    mock_interaction.user.roles = [role]
-
-    # Set up config
-    config_cog.bot.config.get.side_effect = lambda section, key, default=None: (
-        ["Administrator", "Moderator"]
-        if key in (ConfigKeys.KEY_ADMIN_ROLES, ConfigKeys.KEY_MODERATOR_ROLES)
-        else default
+@pytest.mark.asyncio
+async def test_announce_requires_permission(config_cog):
+    """A user without a role cannot change the schedule."""
+    interaction = make_interaction(make_member("Member"))
+    await config_cog.config_announce.callback(config_cog, interaction, "Sun", "12:00")
+    # 既定のまま変更されない
+    assert (
+        config_cog.bot.config.get(
+            ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_ANNOUNCE_WEEKDAY
+        )
+        == "Sun"
     )
-
-    # Check permission
-    result = config_cog._check_admin_permissions(mock_interaction)
-    assert result is False
-
-
-def test_check_admin_permissions_has_permission(config_cog, mock_interaction):
-    """Test permission check when user has permissions."""
-    # Set up roles
-    role1 = MagicMock(spec=discord.Role)
-    role1.name = "Regular"
-    role2 = MagicMock(spec=discord.Role)
-    role2.name = "Moderator"
-    mock_interaction.user.roles = [role1, role2]
-
-    # Set up config
-    config_cog.bot.config.get.side_effect = lambda section, key, default=None: (
-        ["Administrator", "Moderator"]
-        if key in (ConfigKeys.KEY_ADMIN_ROLES, ConfigKeys.KEY_MODERATOR_ROLES)
-        else default
-    )
-
-    # Check permission
-    result = config_cog._check_admin_permissions(mock_interaction)
-    assert result is True
+    assert "権限" in interaction.response.send_message.await_args.args[0]
 
 
 @pytest.mark.asyncio
-async def test_config_role_get(config_cog, mock_interaction):
-    """Test getting action role."""
-    # Set up mock
-    config_cog.bot.config.get.return_value = "@TestRole"
-
-    # Call command callback
-    await config_cog.config_role.callback(config_cog, mock_interaction, None)
-
-    # Verify response
-    mock_interaction.response.send_message.assert_called_with(
-        "現在のアクションロール: @TestRole", ephemeral=True
+async def test_announce_sets_weekday_and_time(config_cog):
+    """A moderator can set the announce schedule and reschedules the task."""
+    interaction = make_interaction(make_member("Moderator"))
+    await config_cog.config_announce.callback(config_cog, interaction, "Mon", "09:30")
+    cfg = config_cog.bot.config
+    assert (
+        cfg.get(ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_ANNOUNCE_WEEKDAY) == "Mon"
     )
+    assert cfg.get(ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_ANNOUNCE_TIME) == "09:30"
+    config_cog.bot.schedule_announce_task.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_config_role_set(config_cog, mock_interaction):
-    """Test setting action role."""
-    # Set up with permission
-    with patch.object(config_cog, "_check_admin_permissions", return_value=True):
-        # Create mock role
-        role = MagicMock(spec=discord.Role)
-        role.name = "TestRole"
-
-        # Call command callback
-        await config_cog.config_role.callback(config_cog, mock_interaction, role)
-
-        # Verify config set
-        config_cog.bot.config.set.assert_called_with(
-            ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_ACTION_ROLE, "TestRole"
-        )
-
-        # Verify response
-        mock_interaction.response.send_message.assert_called_with(
-            "アクションロールを TestRole に設定しました。", ephemeral=True
-        )
+async def test_announce_rejects_invalid_day(config_cog):
+    """An invalid weekday is rejected."""
+    interaction = make_interaction(make_member("Moderator"))
+    await config_cog.config_announce.callback(
+        config_cog, interaction, "Funday", "12:00"
+    )
+    assert "無効な曜日" in interaction.response.send_message.await_args.args[0]
 
 
 @pytest.mark.asyncio
-async def test_config_reset(config_cog, mock_interaction):
-    """Test resetting all config values."""
-    # Set up with permission
-    with patch.object(config_cog, "_check_admin_permissions", return_value=True):
-        # Set up mocks
-        config_cog.bot.config.get.side_effect = lambda section, key, default=None: {
-            ConfigKeys.KEY_CONFIRM_TIME: "21:30",
-            ConfigKeys.KEY_CONFIRM_WEEKDAY: "Thu",
-            ConfigKeys.KEY_ANNOUNCE_TIME: "21:30",
-            ConfigKeys.KEY_ANNOUNCE_WEEKDAY: "Sun",
-        }.get(key, default)
+async def test_announce_rejects_invalid_time(config_cog):
+    """An invalid time format is rejected."""
+    interaction = make_interaction(make_member("Moderator"))
+    await config_cog.config_announce.callback(config_cog, interaction, "Sun", "25:99")
+    assert "無効な時間" in interaction.response.send_message.await_args.args[0]
 
-        # Call command callback
-        await config_cog.config_reset.callback(config_cog, mock_interaction)
 
-        # Verify config reset
-        config_cog.bot.config.reset.assert_called_once()
-
-        # Verify scheduler calls
-        assert config_cog.bot.scheduler.schedule_daily_task.call_count == 2
-
-        # Verify response
-        mock_interaction.response.send_message.assert_called_with(
-            "全ての設定をデフォルト値にリセットしました。", ephemeral=True
-        )
+@pytest.mark.asyncio
+async def test_event_sets_event_schedule(config_cog):
+    """A moderator can set the event weekday/time."""
+    interaction = make_interaction(make_member("告知管理者"))
+    await config_cog.config_event.callback(config_cog, interaction, "Thu", "20:00")
+    cfg = config_cog.bot.config
+    assert cfg.get(ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_EVENT_WEEKDAY) == "Thu"
+    assert cfg.get(ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_EVENT_TIME) == "20:00"
