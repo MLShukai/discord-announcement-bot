@@ -9,12 +9,14 @@ from discord.ext import commands
 
 from ..client import AnnounceBotClient
 from ..constants import ConfigKeys
+from ..state import LTInfo
+from .permissions import is_lt_admin
 
 
 class LtCog(commands.Cog):
     """LT情報を管理するためのコマンドコグ。
 
-    発表者、タイトル、URLの設定・取得・クリア機能を提供する。
+    発表者・タイトル・URLの設定・取得・クリア機能を提供する。
     """
 
     def __init__(self, bot: AnnounceBotClient):
@@ -26,37 +28,14 @@ class LtCog(commands.Cog):
         self.bot = bot
         self.logger = logging.getLogger("announce-bot.commands.lt")
 
-    def _check_lt_admin_permissions(self, interaction: discord.Interaction) -> bool:
-        """ユーザーがLT情報を管理する権限を持っているか確認する。
+    @property
+    def _lt(self) -> LTInfo:
+        """現在のLT情報を返す（状態ストア経由）。"""
+        return self.bot.state.state.lt
 
-        Args:
-            interaction: 確認対象のインタラクション
-
-        Returns:
-            権限がある場合はTrue、ない場合はFalse
-        """
-        if not isinstance(interaction.user, discord.Member):
-            return False
-
-        # 設定から許可ロール名を取得
-        admin_roles = self.bot.config.get(
-            ConfigKeys.SECTION_PERMISSIONS,
-            ConfigKeys.KEY_ADMIN_ROLES,
-            ["Administrator"],
-        )
-        moderator_roles = self.bot.config.get(
-            ConfigKeys.SECTION_PERMISSIONS,
-            ConfigKeys.KEY_MODERATOR_ROLES,
-            ["Moderator"],
-        )
-        lt_admin_roles = self.bot.config.get(
-            ConfigKeys.SECTION_PERMISSIONS, ConfigKeys.KEY_LT_ADMIN_ROLES, ["LT管理者"]
-        )
-
-        allowed_roles = admin_roles + moderator_roles + lt_admin_roles
-
-        # ユーザーが許可ロールを持っているか確認
-        return any(role.name in allowed_roles for role in interaction.user.roles)
+    def _save(self) -> None:
+        """状態を永続化する。"""
+        self.bot.state.save()
 
     lt_group = app_commands.Group(name="lt", description="LT情報の管理")
 
@@ -71,23 +50,20 @@ class LtCog(commands.Cog):
             interaction: コマンドインタラクション
             name: 設定する発表者名、またはNoneで現在の値を取得
         """
-        # 現在の値を取得する場合
         if name is None:
-            speaker = self.bot.announcement_service.lt_speaker
             await interaction.response.send_message(
-                f"現在の発表者: {speaker or '未設定'}", ephemeral=True
+                f"現在の発表者: {self._lt.speaker_name or '未設定'}", ephemeral=True
             )
             return
 
-        # 設定時は権限チェック
-        if not self._check_lt_admin_permissions(interaction):
+        if not is_lt_admin(interaction, self.bot.config):
             await interaction.response.send_message(
                 "LT情報を設定する権限がありません。", ephemeral=True
             )
             return
 
-        # 新しい値を設定
-        self.bot.announcement_service.lt_speaker = name
+        self._lt.speaker_name = name
+        self._save()
         await interaction.response.send_message(
             f"発表者を '{name}' に設定しました。", ephemeral=True
         )
@@ -103,23 +79,20 @@ class LtCog(commands.Cog):
             interaction: コマンドインタラクション
             title: 設定するタイトル、またはNoneで現在の値を取得
         """
-        # 現在の値を取得する場合
         if title is None:
-            current_title = self.bot.announcement_service.lt_title
             await interaction.response.send_message(
-                f"現在のタイトル: {current_title or '未設定'}", ephemeral=True
+                f"現在のタイトル: {self._lt.title or '未設定'}", ephemeral=True
             )
             return
 
-        # 設定時は権限チェック
-        if not self._check_lt_admin_permissions(interaction):
+        if not is_lt_admin(interaction, self.bot.config):
             await interaction.response.send_message(
                 "LT情報を設定する権限がありません。", ephemeral=True
             )
             return
 
-        # 新しい値を設定
-        self.bot.announcement_service.lt_title = title
+        self._lt.title = title
+        self._save()
         await interaction.response.send_message(
             f"タイトルを '{title}' に設定しました。", ephemeral=True
         )
@@ -133,23 +106,20 @@ class LtCog(commands.Cog):
             interaction: コマンドインタラクション
             url: 設定するURL、またはNoneで現在の値を取得
         """
-        # 現在の値を取得する場合
         if url is None:
-            current_url = self.bot.announcement_service.lt_url
             await interaction.response.send_message(
-                f"現在のURL: {current_url or '未設定'}", ephemeral=True
+                f"現在のURL: {self._lt.url or '未設定'}", ephemeral=True
             )
             return
 
-        # 設定時は権限チェック
-        if not self._check_lt_admin_permissions(interaction):
+        if not is_lt_admin(interaction, self.bot.config):
             await interaction.response.send_message(
                 "LT情報を設定する権限がありません。", ephemeral=True
             )
             return
 
-        # 新しい値を設定
-        self.bot.announcement_service.lt_url = url
+        self._lt.url = url
+        self._save()
         await interaction.response.send_message(
             f"URLを '{url}' に設定しました。", ephemeral=True
         )
@@ -158,7 +128,7 @@ class LtCog(commands.Cog):
     @app_commands.describe(
         title="発表のタイトル",
         speaker="発表者の名前",
-        url="発表またはイベントのURL（オプション）",
+        url="発表またはイベントのURL（省略時はデフォルトURL）",
     )
     async def lt_set(
         self,
@@ -173,37 +143,33 @@ class LtCog(commands.Cog):
             interaction: コマンドインタラクション
             title: 設定するタイトル
             speaker: 設定する発表者名
-            url: 設定するURL（オプション）
+            url: 設定するURL（省略時はデフォルトURL）
         """
-        # 権限チェック
-        if not self._check_lt_admin_permissions(interaction):
+        if not is_lt_admin(interaction, self.bot.config):
             await interaction.response.send_message(
                 "LT情報を設定する権限がありません。", ephemeral=True
             )
             return
 
-        # LT情報を設定
-        self.bot.announcement_service.lt_title = title
-        self.bot.announcement_service.lt_speaker = speaker
+        self._lt.title = title
+        self._lt.speaker_name = speaker
 
-        # 完了メッセージ構築
         response_parts = [
             "LT情報を設定しました。",
             f"タイトル: {title}",
             f"発表者: {speaker}",
         ]
-
         if url is not None:
-            self.bot.announcement_service.lt_url = url
+            self._lt.url = url
             response_parts.append(f"URL: {url}")
         else:
-            # デフォルトURLを設定
             default_url = self.bot.config.get(
                 ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_DEFAULT_URL, ""
             )
-            self.bot.announcement_service.lt_url = default_url
-
+            self._lt.url = default_url
             response_parts.append(f"URL: {default_url} (デフォルト)")
+
+        self._save()
         await interaction.response.send_message(
             "\n".join(response_parts), ephemeral=True
         )
@@ -215,30 +181,16 @@ class LtCog(commands.Cog):
         Args:
             interaction: コマンドインタラクション
         """
-        lt_info = self.bot.announcement_service.lt_info
-
-        if not any([lt_info.speaker_name, lt_info.title, lt_info.url]):
+        lt = self._lt
+        if not any([lt.speaker_name, lt.title, lt.url]):
             await interaction.response.send_message(
                 "LT情報は設定されていません。", ephemeral=True
             )
             return
 
-        # 情報メッセージを構築
-        info_parts: list[str] = []
-        if lt_info.speaker_name is not None:
-            info_parts.append(f"発表者: {lt_info.speaker_name}")
-        if lt_info.title is not None:
-            info_parts.append(f"タイトル: {lt_info.title}")
-        if lt_info.url is not None:
-            info_parts.append(f"URL: {lt_info.url}")
-
-        # 完全性ステータスを追加
-        is_complete = lt_info.is_complete
-        status = "✅ 完全" if is_complete else "⚠️ 不完全"
-        info_parts.append(f"ステータス: {status}")
-
+        status = "✅ 完全" if lt.is_complete else "⚠️ 不完全"
         await interaction.response.send_message(
-            "**現在のLT情報:**\n" + "\n".join(info_parts), ephemeral=True
+            f"**現在のLT情報:**\n{lt}\nステータス: {status}", ephemeral=True
         )
 
     @lt_group.command(name="clear")
@@ -248,16 +200,14 @@ class LtCog(commands.Cog):
         Args:
             interaction: コマンドインタラクション
         """
-        # 権限チェック
-        if not self._check_lt_admin_permissions(interaction):
+        if not is_lt_admin(interaction, self.bot.config):
             await interaction.response.send_message(
                 "LT情報をクリアする権限がありません。", ephemeral=True
             )
             return
 
-        # LT情報をクリア
-        self.bot.announcement_service.lt_info.clear()
-
+        self._lt.clear()
+        self._save()
         await interaction.response.send_message(
             "LT情報をクリアしました。", ephemeral=True
         )
@@ -278,12 +228,8 @@ class LtCog(commands.Cog):
             interaction: コマンドインタラクション
             error: 発生したエラー
         """
-        if isinstance(error, app_commands.errors.MissingPermissions):
-            await interaction.response.send_message(
-                "このコマンドを実行する権限がありません。", ephemeral=True
-            )
-        else:
-            self.logger.error(f"LTコマンドでエラーが発生しました: {error}")
+        self.logger.error(f"LTコマンドでエラーが発生しました: {error}")
+        if not interaction.response.is_done():
             await interaction.response.send_message(
                 f"エラーが発生しました: {error}", ephemeral=True
             )

@@ -2,256 +2,110 @@
 """Tests for the announcement service module."""
 
 import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-from bot.announcement.models import LTInfo
-from bot.announcement.service import AnnouncementService
-from bot.config import ConfigManager
 from bot.constants import AnnouncementType
+from bot.state import LTInfo
 
 
-@pytest.fixture
-def mock_config():
-    """Create a mock ConfigManager for testing."""
-    config = MagicMock(spec=ConfigManager)
-
-    # Set up common config.get return values
-    def get_side_effect(section, key, default=None):
-        if section == "settings" and key == "default_url":
-            return "https://example.com"
-        if section == "templates" and key == "regular":
-            return "今週の$mm/$ddのML集会も21時半より開催致します。今週はまったり雑談会です\n$url"
-        if section == "templates" and key == "lightning_talk":
-            return "今週のML集会はLT会! $mm/$ddの21時半より開催致します。\n$speaker_nameさんより「$title」を行いますので、ぜひみなさんお越しください！\n$url"
-        if section == "templates" and key == "rest":
-            return "今週のML集会はおやすみです。"
-        if section == "templates" and key == "confirmation":
-            return "$role 今度の日曜 ($month/$day) の予定を確認します。"
-        if section == "settings" and key == "announce_weekday":
-            return "Sun"
-        return default
-
-    config.get.side_effect = get_side_effect
-    return config
+def test_next_event_date_is_upcoming_wednesday(service):
+    """With the fixed Sunday clock, the next event date is the next
+    Wednesday."""
+    # FIXED_NOW = 2026-06-07 (Sun), event_weekday = Wed -> 2026-06-10
+    assert service.next_event_date() == datetime.date(2026, 6, 10)
 
 
-@pytest.fixture
-def announcement_service(mock_config):
-    """Create an AnnouncementService for testing."""
-    return AnnouncementService(mock_config)
+def test_build_announce_regular_has_date_and_legend(service):
+    """Regular announce embeds the event date and appends the reaction
+    legend."""
+    content = service.build_announce(AnnouncementType.REGULAR)
+    assert "6/10" in content
+    assert "(水)" in content
+    assert "21:30" in content
+    # リアクション凡例が付与される
+    assert "👍" in content and "⚡" in content and "🛠️" in content and "💤" in content
 
 
-def test_announcement_service_init(mock_config):
-    """Test AnnouncementService initialization."""
-    service = AnnouncementService(mock_config)
-    assert service.config == mock_config
-    assert isinstance(service.lt_info, LTInfo)
-
-
-def test_lt_properties(announcement_service):
-    """Test LT getter and setter properties."""
-    # Test initial values
-    assert announcement_service.lt_speaker is None
-    assert announcement_service.lt_title is None
-    assert announcement_service.lt_url is None
-
-    # Test setters
-    announcement_service.lt_speaker = "Test Speaker"
-    announcement_service.lt_title = "Test Title"
-    announcement_service.lt_url = "https://test.com"
-
-    # Test getters after setting
-    assert announcement_service.lt_speaker == "Test Speaker"
-    assert announcement_service.lt_title == "Test Title"
-    assert announcement_service.lt_url == "https://test.com"
-
-
-def test_get_next_weekday(announcement_service):
-    """Test getting the next date for a specified weekday."""
-    today = datetime.date.today()
-
-    for weekday_str, weekday_num in [
-        ("Mon", 0),
-        ("Tue", 1),
-        ("Wed", 2),
-        ("Thu", 3),
-        ("Fri", 4),
-        ("Sat", 5),
-        ("Sun", 6),
-    ]:
-        next_date = announcement_service.get_next_weekday(weekday_str)
-
-        # Check if result is a date
-        assert isinstance(next_date, datetime.date)
-
-        # Check if the date is in the future
-        assert next_date >= today
-
-        # Check if the weekday matches
-        assert next_date.weekday() == weekday_num
-
-        # Check if the date is within the next 7 days
-        assert (next_date - today).days < 8
-
-
-def test_generate_announcement_regular(announcement_service):
-    """Test generating a regular announcement message."""
-    test_date = datetime.date(2023, 5, 15)  # Use a fixed date for testing
-
-    message = announcement_service.generate_announcement_content(
-        AnnouncementType.REGULAR, test_date
+def test_build_announce_lightning_talk_embeds_speaker_and_title(service):
+    """LT announce embeds speaker and title from state."""
+    service.state.state.lt = LTInfo(
+        speaker_name="山田", title="強化学習入門", url="https://x"
     )
-
-    # Check for expected content
-    assert "5/15" in message  # Month/day
-    assert "集会も21時半より開催" in message  # Time
-    assert "https://example.com" in message  # Default URL
+    content = service.build_announce(AnnouncementType.LIGHTNING_TALK)
+    assert "山田" in content
+    assert "強化学習入門" in content
 
 
-def test_generate_announcement_lt(announcement_service):
-    """Test generating a lightning talk announcement message."""
-    test_date = datetime.date(2023, 5, 15)
-
-    # Set LT info
-    announcement_service.lt_speaker = "Test Speaker"
-    announcement_service.lt_title = "Test Title"
-    announcement_service.lt_url = "https://lt-test.com"
-
-    message = announcement_service.generate_announcement_content(
-        AnnouncementType.LIGHTNING_TALK, test_date
-    )
-
-    # Check for expected content
-    assert "5/15" in message  # Month/day
-    assert "LT会" in message
-    assert "Test Speaker" in message
-    assert "「Test Title」" in message
-    assert "https://lt-test.com" in message
+def test_build_announce_workspace(service):
+    """Workspace announce renders without speaker/title."""
+    content = service.build_announce(AnnouncementType.WORKSPACE)
+    assert "作業会" in content
 
 
-def test_generate_announcement_lt_incomplete(announcement_service):
-    """Test generating LT announcement with incomplete info."""
-    test_date = datetime.date(2023, 5, 15)
-
-    # Set only speaker name
-    announcement_service.lt_speaker = "Test Speaker"
-
-    message = announcement_service.generate_announcement_content(
-        AnnouncementType.LIGHTNING_TALK, test_date
-    )
-
-    # Check for placeholder values
-    assert "Test Speaker" in message
-    assert "タイトル未定" in message
-    assert "https://example.com" in message  # Default URL
+def test_build_open_regular(service):
+    """Open message for regular renders instance-open text."""
+    content = service.build_open(AnnouncementType.REGULAR)
+    assert content is not None
+    assert "インスタンス" in content
 
 
-def test_generate_announcement_rest(announcement_service):
-    """Test generating a rest announcement message."""
-    message = announcement_service.generate_announcement_content(AnnouncementType.REST)
+def test_build_open_rest_returns_none(service):
+    """REST has no open message."""
+    assert service.build_open(AnnouncementType.REST) is None
 
-    assert message == "今週のML集会はおやすみです。"
+
+def test_build_open_lightning_talk_embeds_speaker(service):
+    """Open message for LT embeds the speaker."""
+    service.state.state.lt = LTInfo(speaker_name="鈴木", title="T", url="https://x")
+    content = service.build_open(AnnouncementType.LIGHTNING_TALK)
+    assert content is not None
+    assert "鈴木" in content
 
 
 @pytest.mark.asyncio
-async def test_send_announcement(announcement_service):
-    """Test sending an announcement message."""
-    # Create mock channel
-    mock_channel = AsyncMock(spec=discord.TextChannel)
-    mock_channel.send.return_value = MagicMock(spec=discord.Message)
+async def test_send_announce_adds_reactions_and_persists_message_id(service):
+    """send_announce posts, adds 4 reactions, and stores the message id."""
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.name = "announce"
+    sent = MagicMock(spec=discord.Message)
+    sent.id = 4242
+    channel.send = AsyncMock(return_value=sent)
 
-    # Set test data
-    announcement_service.lt_info.speaker_name = "Test Speaker"
-    announcement_service.lt_info.title = "Test Title"
-    announcement_service.lt_info.url = "https://test.com"
+    result = await service.send_announce(channel)
 
-    # Test sending each type of announcement
-    for announcement_type in AnnouncementType:
-        # Reset mocks
-        mock_channel.reset_mock()
-
-        # Send announcement
-        result = await announcement_service.send_announcement(
-            mock_channel, announcement_type
-        )
-
-        # Verify channel.send was called
-        assert mock_channel.send.called
-
-        # Verify result is the mock message
-        assert result == mock_channel.send.return_value
-
-        # If it was a LT announcement, verify info was cleared
-        if announcement_type == AnnouncementType.LIGHTNING_TALK:
-            assert announcement_service.lt_speaker is None
-            assert announcement_service.lt_title is None
-            assert announcement_service.lt_url is None
+    assert result is sent
+    channel.send.assert_awaited_once()
+    assert sent.add_reaction.await_count == 4
+    assert service.state.state.announce_message_id == 4242
+    assert service.state.state.target_event_date == datetime.date(2026, 6, 10)
 
 
 @pytest.mark.asyncio
-async def test_send_announcement_channel_none(announcement_service):
-    """Test sending an announcement with None channel."""
-    result = await announcement_service.send_announcement(
-        None, AnnouncementType.REGULAR
-    )
+async def test_send_open_rest_sends_nothing(service):
+    """send_open does not post when the week is REST."""
+    service.state.state.session_type = AnnouncementType.REST
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.name = "announce"
+    channel.send = AsyncMock()
+
+    result = await service.send_open(channel)
+
     assert result is None
+    channel.send.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_send_announcement_exception(announcement_service):
-    """Test sending an announcement with exception."""
-    mock_channel = AsyncMock(spec=discord.TextChannel)
-    mock_channel.send.side_effect = discord.DiscordException("Test error")
+async def test_send_open_regular_posts(service):
+    """send_open posts the open message for a non-REST week."""
+    service.state.state.session_type = AnnouncementType.REGULAR
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.name = "announce"
+    channel.send = AsyncMock(return_value=MagicMock(spec=discord.Message))
 
-    result = await announcement_service.send_announcement(
-        mock_channel, AnnouncementType.REGULAR
-    )
-    assert result is None
+    result = await service.send_open(channel)
 
-
-@pytest.mark.asyncio
-async def test_send_confirmation(announcement_service):
-    """Test sending a confirmation message."""
-    # Create mock channel and role
-    mock_channel = AsyncMock(spec=discord.TextChannel)
-    mock_message = MagicMock(spec=discord.Message)
-    mock_channel.send.return_value = mock_message
-
-    mock_role = MagicMock(spec=discord.Role)
-    mock_role.mention = "@TestRole"
-
-    # Send confirmation
-    result = await announcement_service.send_confirmation(mock_channel, mock_role)
-
-    # Verify channel.send was called
-    assert mock_channel.send.called
-
-    # Verify role mention was used
-    call_args = mock_channel.send.call_args[0][0]
-    assert "@TestRole" in call_args
-
-    # Verify reactions were added
-    assert mock_message.add_reaction.call_count == 3
-
-    # Verify result is the mock message
-    assert result == mock_message
-
-
-@pytest.mark.asyncio
-async def test_send_confirmation_channel_none(announcement_service):
-    """Test sending a confirmation with None channel."""
-    result = await announcement_service.send_confirmation(None)
-    assert result is None
-
-
-@pytest.mark.asyncio
-async def test_send_confirmation_exception(announcement_service):
-    """Test sending a confirmation with exception."""
-    mock_channel = AsyncMock(spec=discord.TextChannel)
-    mock_channel.send.side_effect = discord.DiscordException("Test error")
-
-    result = await announcement_service.send_confirmation(mock_channel)
-    assert result is None
+    assert result is not None
+    channel.send.assert_awaited_once()

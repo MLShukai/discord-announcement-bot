@@ -7,111 +7,113 @@ import logging
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+from ..clock import Clock, SystemClock
 from ..constants import Weekday
+
+
+def compute_next_run(
+    now: datetime.datetime, weekday: int, hour: int, minute: int
+) -> datetime.datetime:
+    """指定曜日・時刻の次回実行日時を計算する純粋関数。
+
+    Args:
+        now: 基準となる現在日時
+        weekday: 実行曜日（0-6、月-日）
+        hour: 実行時（0-23）
+        minute: 実行分（0-59）
+
+    Returns:
+        `now` より後で最も近い、指定曜日・時刻の日時
+
+    >>> wed_noon = compute_next_run(
+    ...     datetime.datetime(2026, 6, 1, 9, 0), 2, 12, 0
+    ... )
+    >>> wed_noon.isoformat()
+    '2026-06-03T12:00:00'
+    """
+    candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    days_ahead = (weekday - candidate.weekday()) % 7
+    if days_ahead == 0 and candidate <= now:
+        days_ahead = 7
+    return candidate + datetime.timedelta(days=days_ahead)
 
 
 class TaskScheduler:
     """タスクスケジューラクラス。
 
-    指定した時間と曜日に定期的にタスクを実行する。
+    指定した曜日・時刻に毎週繰り返しタスクを実行する。
     """
 
-    def __init__(self):
-        """タスクスケジューラを初期化する。"""
+    def __init__(self, clock: Clock | None = None):
+        """タスクスケジューラを初期化する。
+
+        Args:
+            clock: 時刻ソース（未指定なら `SystemClock`）
+        """
         self.logger = logging.getLogger("announce-bot.scheduler")
+        self.clock = clock or SystemClock()
         self.tasks: dict[str, asyncio.Task[None]] = {}
 
-    def schedule_daily_task(
+    def schedule_weekly_task(
         self,
         task_id: str,
+        weekday: str,
         time_str: str,
-        weekday: str | None,
         callback: Callable[[], Coroutine[Any, Any, None]],
     ) -> None:
-        """指定した時間と曜日に実行するタスクをスケジュールする。
+        """指定曜日・時刻に毎週実行するタスクをスケジュールする。
+
+        同じIDの既存タスクがあれば差し替える。
 
         Args:
             task_id: タスクの一意識別子
-            time_str: 実行時間 (HH:MM形式)
-            weekday: 実行曜日 (3文字略称) または毎日実行の場合はNone
-            callback: タスク実行時に呼び出すコルーチン
+            weekday: 実行曜日（3文字略称）
+            time_str: 実行時刻（HH:MM形式）
+            callback: 実行時に呼び出すコルーチン
         """
-        # 同じIDの既存タスクがある場合はキャンセル
-        if task_id in self.tasks and not self.tasks[task_id].done():
-            self.tasks[task_id].cancel()
+        existing = self.tasks.get(task_id)
+        if existing is not None and not existing.done():
+            existing.cancel()
             self.logger.info(f"既存のタスクをキャンセルしました: {task_id}")
 
-        # 新しいタスクを作成して開始
         self.tasks[task_id] = asyncio.create_task(
-            self._run_at_time(time_str, weekday, callback)
+            self._run_weekly(weekday, time_str, callback)
+        )
+        self.logger.info(
+            f"タスク {task_id} をスケジュールしました: {weekday}曜日 {time_str}"
         )
 
-        when = f"毎日 {time_str}" if weekday is None else f"{weekday}曜日 {time_str}"
-        self.logger.info(f"タスク {task_id} をスケジュールしました: {when}")
-
-    async def _run_at_time(
+    async def _run_weekly(
         self,
+        weekday: str,
         time_str: str,
-        weekday: str | None,
         callback: Callable[[], Coroutine[Any, Any, None]],
     ) -> None:
-        """指定時間と曜日にタスクを実行する内部メソッド。
+        """次回実行時刻まで待機してコールバックを呼ぶループ。
 
         Args:
-            time_str: 実行時間 (HH:MM形式)
-            weekday: 実行曜日 (3文字略称) または毎日実行の場合はNone
-            callback: タスク実行時に呼び出すコルーチン
+            weekday: 実行曜日（3文字略称）
+            time_str: 実行時刻（HH:MM形式）
+            callback: 実行時に呼び出すコルーチン
         """
-        target_weekday = Weekday.to_int(weekday) if weekday else None
+        target_weekday = Weekday.to_int(weekday)
+        hour, minute = map(int, time_str.split(":"))
 
         while True:
-            now = datetime.datetime.now()
-
-            # 対象時間を解析
-            hour, minute = map(int, time_str.split(":"))
-            target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-
-            # 対象時間が当日の過去の場合は明日に設定
-            if target_time <= now:
-                target_time += datetime.timedelta(days=1)
-
-            # 特定曜日指定がある場合は日付を調整
-            if target_weekday is not None:
-                days_ahead = target_weekday - target_time.weekday()
-                if days_ahead < 0:  # 今週の指定曜日が過ぎた場合
-                    days_ahead += 7
-                elif (
-                    days_ahead == 0 and target_time.time() < now.time()
-                ):  # 当日だが時間が過ぎた場合
-                    days_ahead = 7
-
-                # 問題を修正: 日付加算にtimedeltaを使用
-                target_time = target_time + datetime.timedelta(days=days_ahead)
-                target_time = target_time.replace(hour=hour, minute=minute)
-
-            # 待機秒数を計算
-            seconds_to_wait = (target_time - now).total_seconds()
-            self.logger.debug(
-                f"{seconds_to_wait:.1f}秒待機します（目標時刻: {target_time}）"
-            )
+            now = self.clock.now()
+            target = compute_next_run(now, target_weekday, hour, minute)
+            seconds_to_wait = (target - now).total_seconds()
+            self.logger.debug(f"{seconds_to_wait:.1f}秒待機します（目標: {target}）")
 
             try:
-                # 対象時間まで待機
                 await asyncio.sleep(seconds_to_wait)
-
-                # コールバックを実行
-                self.logger.info(
-                    f"スケジュールされたタスクを実行します: {datetime.datetime.now()}"
-                )
+                self.logger.info(f"スケジュールタスクを実行します: {self.clock.now()}")
                 await callback()
-
             except asyncio.CancelledError:
                 self.logger.info("タスクがキャンセルされました")
                 break
             except Exception as e:
-                self.logger.error(
-                    f"スケジュールされたタスクでエラーが発生しました: {e}"
-                )
+                self.logger.error(f"スケジュールタスクでエラーが発生しました: {e}")
                 # 連続エラーを避けるため少し待機
                 await asyncio.sleep(60)
 
@@ -121,5 +123,4 @@ class TaskScheduler:
             if not task.done():
                 task.cancel()
                 self.logger.info(f"タスクをキャンセルしました: {task_id}")
-
         self.tasks.clear()
