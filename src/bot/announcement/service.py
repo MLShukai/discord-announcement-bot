@@ -12,7 +12,7 @@ from ..config import ConfigManager
 from ..constants import AnnouncementType, ConfigKeys, ReactionEmoji, Weekday
 from ..state import StateStore
 
-# 初回告知メッセージ末尾に付与するリアクション凡例
+# 確認チャンネルの報告メッセージ末尾に付与するリアクション凡例
 REACTION_LEGEND = (
     "\n\n――― 今週の予定を変更する場合は下のリアクションを押してください ―――\n"
     f"{ReactionEmoji.REGULAR}: 通常開催  "
@@ -100,7 +100,7 @@ class AnnouncementService:
         }
 
     def build_announce(self, announcement_type: AnnouncementType) -> str:
-        """初回告知メッセージ（リアクション凡例付き）を生成する。
+        """初回告知メッセージ（公開チャンネル向け本文）を生成する。
 
         Args:
             announcement_type: 今週の開催種別
@@ -110,10 +110,20 @@ class AnnouncementService:
         """
         template_key = ConfigKeys.ANNOUNCE_TEMPLATE_KEYS[announcement_type]
         template_str = self.config.get(ConfigKeys.SECTION_TEMPLATES, template_key, "")
-        content = Template(template_str).safe_substitute(
+        return Template(template_str).safe_substitute(
             self._template_vars(self.next_event_date())
         )
-        return content + REACTION_LEGEND
+
+    def build_confirm(self, announcement_type: AnnouncementType) -> str:
+        """確認チャンネルへの報告メッセージ（リアクション凡例付き）を生成する。
+
+        Args:
+            announcement_type: 今週の開催種別
+
+        Returns:
+            確認チャンネルに送信する報告本文
+        """
+        return f"今週は「{announcement_type}」で告知しました。{REACTION_LEGEND}"
 
     def build_open(self, announcement_type: AnnouncementType) -> str | None:
         """開催告知メッセージを生成する。
@@ -135,10 +145,12 @@ class AnnouncementService:
     async def send_announce(
         self, channel: discord.TextChannel | None
     ) -> discord.Message | None:
-        """初回告知を送信し、リアクションを付与して状態を更新する。
+        """初回告知を公開チャンネルへ送信し、状態を更新する。
+
+        公開メッセージにはリアクションを付与しない（種別変更は確認チャンネルで行う）。
 
         Args:
-            channel: 送信先の告知チャンネル
+            channel: 送信先の公開告知チャンネル
 
         Returns:
             送信されたメッセージ、または送信失敗時は None
@@ -155,6 +167,38 @@ class AnnouncementService:
                 f"初回告知({session_type})を {channel.name} に送信しました"
             )
 
+            # 再投稿時に削除対象を特定するため記録し永続化
+            self.state.state.announce_message_id = message.id
+            self.state.state.target_event_date = self.next_event_date()
+            self.state.save()
+            return message
+        except discord.DiscordException as e:
+            self.logger.error(f"初回告知の送信に失敗しました: {e}")
+            return None
+
+    async def send_confirm(
+        self, channel: discord.TextChannel | None, mention: str = ""
+    ) -> discord.Message | None:
+        """確認チャンネルへ報告メッセージを送信し、リアクションを付与して記録する。
+
+        Args:
+            channel: 送信先の確認チャンネル
+            mention: 報告本文の先頭に付けるメンション文字列（空なら付けない）
+
+        Returns:
+            送信されたメッセージ、または送信失敗時は None
+        """
+        if channel is None:
+            self.logger.error("確認報告を送信できません: チャンネルがNoneです")
+            return None
+
+        session_type = self.state.state.session_type
+        body = self.build_confirm(session_type)
+        content = f"{mention} {body}" if mention else body
+        try:
+            message = await channel.send(content)
+            self.logger.info(f"確認報告を {channel.name} に送信しました")
+
             for emoji in (
                 ReactionEmoji.REGULAR,
                 ReactionEmoji.LIGHTNING_TALK,
@@ -163,14 +207,42 @@ class AnnouncementService:
             ):
                 await message.add_reaction(emoji)
 
-            # 選択対象メッセージとして記録し永続化
-            self.state.state.announce_message_id = message.id
-            self.state.state.target_event_date = self.next_event_date()
+            # 種別変更リアクションの対象メッセージとして記録し永続化
+            self.state.state.confirm_message_id = message.id
             self.state.save()
             return message
         except discord.DiscordException as e:
-            self.logger.error(f"初回告知の送信に失敗しました: {e}")
+            self.logger.error(f"確認報告の送信に失敗しました: {e}")
             return None
+
+    async def reannounce(
+        self, channel: discord.TextChannel | None
+    ) -> discord.Message | None:
+        """既存の公開告知を削除し、現在の種別で再投稿する。
+
+        まだ今週の告知をしていない（`announce_message_id` が未設定）場合は何もしない。
+
+        Args:
+            channel: 公開告知チャンネル
+
+        Returns:
+            再投稿されたメッセージ。対象なし・チャンネル None・失敗時は None
+        """
+        if channel is None:
+            self.logger.error("再告知できません: チャンネルがNoneです")
+            return None
+
+        message_id = self.state.state.announce_message_id
+        if message_id is None:
+            return None
+
+        try:
+            old_message = await channel.fetch_message(message_id)
+            await old_message.delete()
+        except discord.DiscordException as e:
+            self.logger.warning(f"旧告知の削除に失敗しました（続行）: {e}")
+
+        return await self.send_announce(channel)
 
     async def send_open(
         self, channel: discord.TextChannel | None

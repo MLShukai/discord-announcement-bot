@@ -1,6 +1,9 @@
 # tests/commands/test_config_cog.py
 """Tests for the config commands module."""
 
+from unittest.mock import MagicMock
+
+import discord
 import pytest
 
 from bot.commands.config_cog import ConfigCog
@@ -58,6 +61,30 @@ async def test_announce_rejects_invalid_time(config_cog):
     interaction = make_interaction(make_member("Moderator"))
     await config_cog.config_announce.callback(config_cog, interaction, "Sun", "25:99")
     assert "無効な時間" in interaction.response.send_message.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_channel_confirm_sets_id(config_cog):
+    """A moderator can set the confirm channel id."""
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.id = 314159
+    channel.name = "confirm"
+    interaction = make_interaction(make_member("Moderator"))
+    await config_cog.config_channel_confirm.callback(config_cog, interaction, channel)
+    assert (
+        config_cog.bot.config.get(
+            ConfigKeys.SECTION_CHANNELS, ConfigKeys.KEY_CONFIRM_CHANNEL_ID
+        )
+        == "314159"
+    )
+
+
+@pytest.mark.asyncio
+async def test_channel_confirm_getter_when_unset(config_cog):
+    """Calling /config channel confirm without a channel reports it unset."""
+    interaction = make_interaction(make_member("Member"))
+    await config_cog.config_channel_confirm.callback(config_cog, interaction, None)
+    assert "未設定" in interaction.response.send_message.await_args.args[0]
 
 
 @pytest.mark.asyncio

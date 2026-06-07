@@ -65,6 +65,7 @@ def mock_bot(config, state, service, clock) -> MagicMock:
     bot.state = state
     bot.announcement_service = service
     bot.clock = clock
+    bot.reannounce = AsyncMock()
     return bot
 
 

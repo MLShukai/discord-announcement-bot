@@ -27,11 +27,21 @@ async def test_plan_set_requires_permission(session_cog):
 
 
 @pytest.mark.asyncio
-async def test_plan_set_updates_session_type(session_cog):
-    """A moderator sets the weekly type and it is persisted."""
+async def test_plan_set_updates_session_type_and_reannounces(session_cog):
+    """A moderator sets the weekly type, it is persisted, and re-announced."""
     interaction = make_interaction(make_member("Moderator"))
     await session_cog.plan_set.callback(session_cog, interaction, "workspace")
     assert session_cog.bot.state.state.session_type == AnnouncementType.WORKSPACE
+    session_cog.bot.reannounce.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_plan_set_denied_does_not_reannounce(session_cog):
+    """A denied /plan set neither changes the type nor re-announces."""
+    interaction = make_interaction(make_member("Member"))
+    await session_cog.plan_set.callback(session_cog, interaction, "workspace")
+    assert session_cog.bot.state.state.session_type == AnnouncementType.REGULAR
+    session_cog.bot.reannounce.assert_not_awaited()
 
 
 @pytest.mark.asyncio

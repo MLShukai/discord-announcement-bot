@@ -27,6 +27,7 @@ def test_default_state_when_file_missing(tmp_path):
     assert store.state.session_type == AnnouncementType.REGULAR
     assert store.state.lt.is_complete is False
     assert store.state.announce_message_id is None
+    assert store.state.confirm_message_id is None
     assert store.state.target_event_date is None
 
 
@@ -37,6 +38,7 @@ def test_save_and_reload_roundtrip(tmp_path):
     store.state.session_type = AnnouncementType.LIGHTNING_TALK
     store.state.lt = LTInfo(speaker_name="鈴木", title="強化学習", url="https://x")
     store.state.announce_message_id = 99887766
+    store.state.confirm_message_id = 11223344
     store.state.target_event_date = datetime.date(2026, 6, 10)
     store.save()
 
@@ -46,6 +48,7 @@ def test_save_and_reload_roundtrip(tmp_path):
     assert reloaded.state.lt.title == "強化学習"
     assert reloaded.state.lt.url == "https://x"
     assert reloaded.state.announce_message_id == 99887766
+    assert reloaded.state.confirm_message_id == 11223344
     assert reloaded.state.target_event_date == datetime.date(2026, 6, 10)
 
 

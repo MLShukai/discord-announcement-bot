@@ -143,7 +143,7 @@ class ConfigCog(commands.Cog):
         ]
 
     @config_group.command(name="role")
-    @app_commands.describe(role="初回告知でメンションするロール")
+    @app_commands.describe(role="確認報告でメンションするロール (告知管理者)")
     async def config_role(
         self, interaction: discord.Interaction, role: discord.Role | None = None
     ):
@@ -213,21 +213,72 @@ class ConfigCog(commands.Cog):
             f"告知チャンネルを {channel.name} に設定しました。", ephemeral=True
         )
 
-    def _announce_channel_name(self) -> str:
-        """設定された告知チャンネルの表示名を返す。
+    @config_channel.command(name="confirm")
+    @app_commands.describe(channel="種別変更を行う確認チャンネル (運営用)")
+    async def config_channel_confirm(
+        self,
+        interaction: discord.Interaction,
+        channel: discord.TextChannel | None = None,
+    ):
+        """確認チャンネルを設定または取得する。
+
+        Args:
+            interaction: コマンドインタラクション
+            channel: 設定するチャンネル、またはNoneで現在の値を取得
+        """
+        if channel is None:
+            await interaction.response.send_message(
+                f"現在の確認チャンネル: {self._confirm_channel_name()}", ephemeral=True
+            )
+            return
+
+        if not is_admin(interaction, self.bot.config):
+            await interaction.response.send_message(
+                "設定を変更する権限がありません。", ephemeral=True
+            )
+            return
+
+        self.bot.config.set(
+            ConfigKeys.SECTION_CHANNELS,
+            ConfigKeys.KEY_CONFIRM_CHANNEL_ID,
+            str(channel.id),
+        )
+        await interaction.response.send_message(
+            f"確認チャンネルを {channel.name} に設定しました。", ephemeral=True
+        )
+
+    def _channel_name(self, key: str) -> str:
+        """`[channels]` の指定キーが指すチャンネルの表示名を返す。
+
+        Args:
+            key: チャンネルIDの設定キー
 
         Returns:
             チャンネル名。未設定なら「未設定」
         """
-        channel_id = self.bot.config.get(
-            ConfigKeys.SECTION_CHANNELS, ConfigKeys.KEY_ANNOUNCE_CHANNEL_ID, ""
-        )
+        channel_id = self.bot.config.get(ConfigKeys.SECTION_CHANNELS, key, "")
         if not channel_id:
             return "未設定"
         channel = self.bot.get_channel(int(channel_id))
         if isinstance(channel, discord.TextChannel):
             return channel.name
         return f"未知 (ID: {channel_id})"
+
+    def _announce_channel_name(self) -> str:
+        """設定された公開告知チャンネルの表示名を返す。
+
+        Returns:
+            チャンネル名。未設定なら「未設定」
+        """
+        return self._channel_name(ConfigKeys.KEY_ANNOUNCE_CHANNEL_ID)
+
+    def _confirm_channel_name(self) -> str:
+        """設定された確認チャンネルの表示名を返す。
+
+        Returns:
+            チャンネル名。未設定なら「未設定」
+        """
+        return self._channel_name(ConfigKeys.KEY_CONFIRM_CHANNEL_ID)
 
     @config_group.command(name="show")
     async def config_show(self, interaction: discord.Interaction):
@@ -246,6 +297,7 @@ class ConfigCog(commands.Cog):
             f"{get(s, ConfigKeys.KEY_EVENT_TIME, '21:30')}",
             f"アクションロール: {get(s, ConfigKeys.KEY_ACTION_ROLE, '@everyone')}",
             f"告知チャンネル: {self._announce_channel_name()}",
+            f"確認チャンネル: {self._confirm_channel_name()}",
             f"デフォルトURL: {get(s, ConfigKeys.KEY_DEFAULT_URL, '')}",
         ]
         await interaction.response.send_message("\n".join(config_info), ephemeral=True)
@@ -274,6 +326,7 @@ class ConfigCog(commands.Cog):
     @config_event.error
     @config_role.error
     @config_channel_announce.error
+    @config_channel_confirm.error
     @config_show.error
     @config_reset.error
     async def config_command_error(
