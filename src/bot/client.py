@@ -84,22 +84,59 @@ class AnnounceBotClient(commands.Bot):
         )
 
     def get_announce_channel(self) -> discord.TextChannel | None:
-        """設定された告知チャンネルを取得する。
+        """設定された公開告知チャンネルを取得する。
 
         Returns:
-            告知チャンネル。未設定・不正な場合は None
+            公開告知チャンネル。未設定・不正な場合は None
         """
-        channel_id = self.config.get(
-            ConfigKeys.SECTION_CHANNELS, ConfigKeys.KEY_ANNOUNCE_CHANNEL_ID, ""
-        )
+        return self._get_channel_by_config(ConfigKeys.KEY_ANNOUNCE_CHANNEL_ID)
+
+    def get_confirm_channel(self) -> discord.TextChannel | None:
+        """設定された確認チャンネル（運営用）を取得する。
+
+        Returns:
+            確認チャンネル。未設定・不正な場合は None
+        """
+        return self._get_channel_by_config(ConfigKeys.KEY_CONFIRM_CHANNEL_ID)
+
+    def _get_channel_by_config(self, key: str) -> discord.TextChannel | None:
+        """`[channels]` セクションの指定キーからテキストチャンネルを解決する。
+
+        Args:
+            key: チャンネルIDの設定キー
+
+        Returns:
+            テキストチャンネル。未設定・不正な場合は None
+        """
+        channel_id = self.config.get(ConfigKeys.SECTION_CHANNELS, key, "")
         if not channel_id:
             return None
         channel = self.get_channel(int(channel_id))
         return channel if isinstance(channel, discord.TextChannel) else None
 
+    def _action_role_mention(self, guild: discord.Guild | None) -> str:
+        """確認報告でメンションする告知管理者ロールのメンション文字列を返す。
+
+        Args:
+            guild: 対象ギルド
+
+        Returns:
+            ロールのメンション文字列。解決できなければ空文字
+        """
+        if guild is None:
+            return ""
+        role_name = self.config.get(
+            ConfigKeys.SECTION_SETTINGS, ConfigKeys.KEY_ACTION_ROLE, ""
+        )
+        if not role_name:
+            return ""
+        role = discord.utils.get(guild.roles, name=role_name)
+        return role.mention if role is not None else ""
+
     async def run_weekly_announce(self) -> None:
         """初回告知を送信する（スケジュール／手動共通）。
 
+        公開チャンネルへ告知を投稿し、確認チャンネルへ報告メッセージを送信する。
         新しい開催週に入った場合は種別を通常開催へリセットし、LT情報をクリアする。
         """
         channel = self.get_announce_channel()
@@ -117,6 +154,22 @@ class AnnounceBotClient(commands.Bot):
             self.logger.info(f"新しい開催週({event_date})の予定を初期化しました")
 
         await self.announcement_service.send_announce(channel)
+
+        # 確認チャンネルへ報告 (運営がリアクションで種別変更できる)
+        confirm_channel = self.get_confirm_channel()
+        if confirm_channel is None:
+            self.logger.error("確認報告を送信できません: 確認チャンネルが未設定です")
+            return
+        mention = self._action_role_mention(confirm_channel.guild)
+        await self.announcement_service.send_confirm(confirm_channel, mention)
+
+    async def reannounce(self) -> None:
+        """現在の種別で公開告知を削除・再投稿する。"""
+        channel = self.get_announce_channel()
+        if channel is None:
+            self.logger.error("再告知できません: 告知チャンネルが未設定です")
+            return
+        await self.announcement_service.reannounce(channel)
 
     async def on_ready(self) -> None:
         """Botの準備完了時に呼ばれるイベントハンドラ。"""
@@ -147,9 +200,10 @@ class AnnounceBotClient(commands.Bot):
     async def on_raw_reaction_add(
         self, payload: discord.RawReactionActionEvent
     ) -> None:
-        """初回告知メッセージへのリアクションで今週の種別を更新する。
+        """確認チャンネルの報告メッセージへのリアクションで今週の種別を更新する。
 
-        メッセージIDを永続化しているため、再起動後のメッセージにも追従できる。
+        種別が変わると公開告知を削除・再投稿する。メッセージIDを永続化しているため、
+        再起動後のメッセージにも追従できる。
 
         Args:
             payload: 生のリアクション追加イベント
@@ -157,7 +211,7 @@ class AnnounceBotClient(commands.Bot):
         # 自身のリアクション・対象外メッセージは無視
         if self.user is not None and payload.user_id == self.user.id:
             return
-        if payload.message_id != self.state.state.announce_message_id:
+        if payload.message_id != self.state.state.confirm_message_id:
             return
 
         announcement_type = REACTION_TO_TYPE.get(str(payload.emoji))
@@ -177,7 +231,10 @@ class AnnounceBotClient(commands.Bot):
             f"ユーザー {member} が種別を {announcement_type} に変更しました"
         )
 
-        # LT選択時に情報が不完全なら警告
+        # 公開告知を新しい種別で再投稿
+        await self.reannounce()
+
+        # LT選択時に情報が不完全なら確認チャンネルへ警告
         if (
             announcement_type == AnnouncementType.LIGHTNING_TALK
             and not self.state.state.lt.is_complete

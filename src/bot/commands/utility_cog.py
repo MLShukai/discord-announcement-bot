@@ -17,7 +17,7 @@ _TYPE_CHOICES = list(TYPE_BY_SLUG.keys())
 HELP_TEXT = """**Discord告知Bot - コマンドヘルプ**
 
 **運用の流れ:**
-日曜に「初回告知」を自動投稿 → 水曜までに種別を変更 → 開催時に `/open`
+日曜に告知チャンネルへ「初回告知」を自動投稿 → 確認チャンネルへ報告 → 確認チャンネルのリアクション/`/plan set` で種別を変更すると公開告知を再投稿 → 開催時に `/open`
 
 **今週の予定:**
 `/plan show` - 今週の種別とLT情報を表示
@@ -33,7 +33,8 @@ HELP_TEXT = """**Discord告知Bot - コマンドヘルプ**
 `/config announce <day> <time>` - 初回告知の曜日・時刻
 `/config event <day> <time>` - 開催の曜日・時刻
 `/config role [role]` - アクションロール
-`/config channel announce [channel]` - 告知チャンネル
+`/config channel announce [channel]` - 公開告知チャンネル
+`/config channel confirm [channel]` - 確認チャンネル (運営用)
 `/config show` / `/config reset` - 表示 / リセット
 
 **その他:**

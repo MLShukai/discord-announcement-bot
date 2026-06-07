@@ -64,6 +64,7 @@ class SessionState:
     session_type: AnnouncementType = AnnouncementType.REGULAR
     lt: LTInfo = field(default_factory=LTInfo)
     announce_message_id: int | None = None
+    confirm_message_id: int | None = None
     target_event_date: datetime.date | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -80,6 +81,7 @@ class SessionState:
                 "url": self.lt.url,
             },
             "announce_message_id": self.announce_message_id,
+            "confirm_message_id": self.confirm_message_id,
             "target_event_date": (
                 self.target_event_date.isoformat()
                 if self.target_event_date is not None
@@ -115,6 +117,7 @@ class SessionState:
             session_type=session_type,
             lt=lt,
             announce_message_id=data.get("announce_message_id"),
+            confirm_message_id=data.get("confirm_message_id"),
             target_event_date=target_event_date,
         )
 

@@ -72,6 +72,9 @@ class SessionCog(commands.Cog):
             f"{interaction.user} が種別を {announcement_type} に変更しました"
         )
 
+        # 公開告知を新しい種別で再投稿 (まだ告知していない週は何もしない)
+        await self.bot.reannounce()
+
         message = f"今週の予定を「{announcement_type}」に設定しました。"
         if (
             announcement_type == AnnouncementType.LIGHTNING_TALK

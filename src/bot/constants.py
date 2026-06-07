@@ -7,7 +7,7 @@ from typing import override
 
 # リアクション絵文字
 class ReactionEmoji:
-    """初回告知メッセージに付与するリアクション絵文字。"""
+    """確認報告メッセージに付与するリアクション絵文字。"""
 
     REGULAR = "👍"  # 通常開催
     LIGHTNING_TALK = "⚡"  # LT開催
@@ -129,11 +129,12 @@ class ConfigKeys:
     KEY_ANNOUNCE_WEEKDAY = "announce_weekday"  # 初回告知の曜日 (日曜)
     KEY_EVENT_TIME = "event_time"  # 開催時刻 (水曜21:30、文面表示用)
     KEY_EVENT_WEEKDAY = "event_weekday"  # 開催曜日 (水曜、日付計算用)
-    KEY_ACTION_ROLE = "action_role"  # 初回告知でメンションするロール
+    KEY_ACTION_ROLE = "action_role"  # 確認報告でメンションするロール (告知管理者)
     KEY_DEFAULT_URL = "default_url"
 
     # チャンネルキー
-    KEY_ANNOUNCE_CHANNEL_ID = "announce_channel_id"
+    KEY_ANNOUNCE_CHANNEL_ID = "announce_channel_id"  # 公開告知チャンネル
+    KEY_CONFIRM_CHANNEL_ID = "confirm_channel_id"  # 運営用の確認チャンネル
 
     # 権限キー
     KEY_ADMIN_ROLES = "admin_roles"
